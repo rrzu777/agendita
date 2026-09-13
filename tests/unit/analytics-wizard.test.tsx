@@ -113,6 +113,29 @@ describe('wizard evidence follows actual interactions', () => {
     await act(async () => (host.querySelector('input[type="radio"]') as HTMLInputElement).click()); await clickButton(host, 'Continuar')
     expect(store.snapshot()?.queue.find((q) => q.event.type === 'service_selected')?.event.data).toMatchObject({ serviceId: 'Corte', modality: 'on_site', professionalStepRequired: false })
   })
+  it('emits the complete multi-service selection plus accepted add/remove observations without contact data', async () => {
+    render([service('Corte'), service('Barba')])
+    await clickButton(host, 'Corte', { match: 'contains' })
+    await clickButton(host, 'Barba', { match: 'contains' })
+    await clickButton(host, 'Continuar')
+    const events = store.snapshot()!.queue.map(item => item.event)
+    expect(events.filter(event => event.type === 'service_selection_changed').map(event => event.data)).toMatchObject([
+      { serviceId: 'Corte', action: 'add', result: 'accepted', selectedServiceIds: ['Corte'] },
+      { serviceId: 'Barba', action: 'add', result: 'accepted', selectedServiceIds: ['Corte', 'Barba'] },
+    ])
+    expect(events.find(event => event.type === 'service_selected')?.data).toMatchObject({ serviceId: 'Corte', serviceIds: ['Corte', 'Barba'] })
+    expect(JSON.stringify(events)).not.toContain('customerName')
+  })
+  it('records a blocked multi-service combination when no professional can perform all services', async () => {
+    render([service('Corte'), service('Barba')], [
+      { id: 'one', name: 'One', bio: null, modalities: ['on_site'], serviceIds: ['Corte'] },
+      { id: 'two', name: 'Two', bio: null, modalities: ['on_site'], serviceIds: ['Barba'] },
+    ])
+    await clickButton(host, 'Corte', { match: 'contains' })
+    await clickButton(host, 'Barba', { match: 'contains' })
+    expect(host.textContent).toContain('Ningún profesional realiza todos estos servicios')
+    expect(store.snapshot()!.queue.find(item => item.event.type === 'service_selection_changed' && item.event.data.serviceId === 'Barba')?.event.data).toMatchObject({ result: 'incompatible', selectedServiceIds: ['Corte', 'Barba'] })
+  })
   it('A time then B selection invalidates downstream evidence and never includes customer fields', async () => {
     render([service('Corte'), service('Masaje')])
     await clickButton(host, 'Corte', { match: 'contains' }); await clickButton(host, 'Continuar'); await clickButton(host, 'Fecha fixture'); await clickButton(host, 'Hora fixture')

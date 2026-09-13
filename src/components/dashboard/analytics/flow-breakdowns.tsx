@@ -70,7 +70,7 @@ function CountTable<K extends string>({ label, counts, labels }: { label: string
 }
 
 function Population({ group }: { group: FlowBreakdownGroup }) {
-  const label = `Entrada ${group.entryKind === 'complete' ? 'completa' : 'parcial'} · ${group.maturity === 'mature' ? 'maduros' : 'en curso'}`
+  const label = `Flujo v${group.flowVersion} · entrada ${group.entryKind === 'complete' ? 'completa' : 'parcial'} · ${group.maturity === 'mature' ? 'maduros' : 'en curso'}`
   const hasErrors = Object.values(group.errors).some(count => count > 0)
   return <section aria-label={label} className="min-w-0 self-start rounded-xl border border-border p-4 lg:has-[details[open]]:col-span-2">
     <h3 className="font-heading text-base font-semibold text-primary">{label}</h3>
@@ -110,7 +110,7 @@ export function FlowBreakdowns({ report }: { report: FlowBreakdownsReport }) {
         <p className="text-sm text-muted-foreground">Sólo observaciones retenidas, máximo 90 días. Este detalle no se reconstruye desde agregados históricos ni hitos.</p>
         {report.groups !== null && <>
           <p className="text-sm text-muted-foreground">La unidad es el intento, no eventos ni personas. Entrada completa: observada desde el primer paso; parcial: restauración o consentimiento a mitad del flujo. Maduros: ya tuvieron 24 h; los intentos en curso no se comparan con ellos.</p>
-          <div className="grid items-start gap-4 lg:grid-cols-2">{report.groups.map(group => <Population key={`${group.entryKind}-${group.maturity}`} group={group} />)}</div>
+          <div className="grid items-start gap-4 lg:grid-cols-2">{report.groups.map(group => <Population key={`${group.flowVersion}-${group.entryKind}-${group.maturity}`} group={group} />)}</div>
           <div className="space-y-2 text-sm text-muted-foreground">
             <p>Se muestra el último contexto válido observado. «No observado» no significa que no eligió. «Paso no requerido» describe la configuración automática, no una elección explícita.</p>
             <p>Elegido no significa pagado: requiere una selección explícita observada, no una preselección. La pantalla y la condición económica tampoco acreditan cobro.</p>

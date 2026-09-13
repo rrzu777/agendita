@@ -8,6 +8,39 @@ function storage() {
 }
 
 describe('consented atomic analytics state', () => {
+  it('starts a partial v2 attempt instead of appending new-flow events to a restored v1 stream', () => {
+    const local = storage(), tab = storage()
+    const common = { businessId: 'salon', origin: 'https://example.test', storage: tab, preferences: local }
+    const v1 = createAnalyticsStore({ ...common, flowVersion: 1 })
+    v1.chooseConsent(true); v1.open(); v1.startAttempt('complete')
+    const old = v1.snapshot()!.active
+    const v2 = createAnalyticsStore({ ...common, flowVersion: 2 })
+    v2.open(); v2.startAttempt('complete')
+    const state = v2.snapshot()!
+    expect(state.active).not.toBe(old)
+    expect(state.streams.find(stream => stream.key === state.active)).toMatchObject({ flowVersion: 2, entryKind: 'partial' })
+  })
+  it('honors complete entry after an expired v2 attempt retained for delivery', () => {
+    const local = storage(), tab = storage()
+    let now = Date.parse('2026-08-31T10:00:00Z')
+    const options = { businessId: 'salon', origin: 'https://example.test', storage: tab, preferences: local, flowVersion: 2 as const, now: () => now }
+    const store = createAnalyticsStore(options)
+    store.chooseConsent(true); store.open(); store.startAttempt('complete')
+    const previous = store.snapshot()!.active
+    store.mutate((state) => {
+      state.streams.find((stream) => stream.key === previous)!.receipt = {
+        id: crypto.randomUUID(), credential: 'expired-attempt', startedAt: new Date(now).toISOString(),
+        expiresAt: new Date(now + 1000).toISOString(), retentionExpiresAt: new Date(now + 90 * 86400000).toISOString(),
+      }
+    })
+    now += 2000
+    store.startAttempt('complete')
+    const state = store.snapshot()!
+    const current = state.streams.find((stream) => stream.key === state.active)
+    expect(current).toMatchObject({ flowVersion: 2, entryKind: 'complete' })
+    expect(current?.key).not.toBe(previous)
+    expect(state.queue.filter(item => item.stream === current?.key).map(item => item.event.type)).toEqual(['funnel_started'])
+  })
   it('isolates v2 consent and tab state from the v1 namespace', () => {
     const local = storage(), tab = storage()
     const v1 = createAnalyticsStore({ businessId: 'salon', origin: 'https://example.test', storage: tab, preferences: local, consentVersion: 1 })

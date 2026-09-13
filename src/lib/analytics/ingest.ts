@@ -67,7 +67,7 @@ export interface BatchReceipt { receipts: { index: number; eventId: string | nul
 
 const tokenSchema = z.string().regex(/^[A-Za-z0-9_-]{22,64}$/)
 const sessionSchema = z.strictObject({ bootstrapKey: z.uuid(), consent: z.literal(true), consentVersion: z.union([z.literal(1), z.literal(2)]), acq: tokenSchema.optional(), utmSource: z.string().max(80).optional(), utmMedium: z.string().max(80).optional(), utmCampaign: z.string().max(128).optional(), referrerHost: z.string().max(253).regex(/^[a-z0-9.-]+$/i).optional() })
-const attemptSchema = z.strictObject({ bootstrapKey: z.uuid(), credential: z.string().max(4096), entryKind: z.enum(['complete', 'partial']) })
+const attemptSchema = z.strictObject({ bootstrapKey: z.uuid(), credential: z.string().max(4096), entryKind: z.enum(['complete', 'partial']), flowVersion: z.union([z.literal(1), z.literal(2)]).default(1) })
 export type AnalyticsSessionBootstrapInput = z.infer<typeof sessionSchema>
 export type AnalyticsAttemptBootstrapInput = z.infer<typeof attemptSchema>
 function configFor(context: PublicAnalyticsContext, now: Date) {
@@ -134,7 +134,7 @@ export async function bootstrapAnalyticsAttempt(context: PublicAnalyticsContext,
     if (session.bootstrapKey === data.bootstrapKey.toLowerCase()) throw new AnalyticsCaptureError('conflict')
     const existing = await tx.bookingFunnelAttempt.findUnique({ where: { businessId_bootstrapKey: { businessId: context.businessId, bootstrapKey: data.bootstrapKey } } })
     if (existing) {
-      if (existing.sessionId !== session.id || existing.origin !== context.origin || existing.entryKind !== data.entryKind) throw new AnalyticsCaptureError('conflict')
+      if (existing.sessionId !== session.id || existing.origin !== context.origin || existing.entryKind !== data.entryKind || existing.flowVersion !== data.flowVersion) throw new AnalyticsCaptureError('conflict')
       if (existing.consentVersion !== session.consentVersion) throw new AnalyticsCaptureError('invalid_credential')
       if (existing.conversionDeadlineAt <= now || existing.startedAt > now || existing.startedAt < session.startedAt || existing.startedAt >= session.expiresAt) throw new AnalyticsCaptureError('expired')
       return claimsForAttempt(session, existing)
@@ -145,7 +145,7 @@ export async function bootstrapAnalyticsAttempt(context: PublicAnalyticsContext,
       await closeAnalyticsCollection(tx, context.businessId, now, 'budget')
       return null
     }
-    const created = await tx.bookingFunnelAttempt.create({ data: { businessId: context.businessId, sessionId: session.id, bootstrapKey: data.bootstrapKey, origin: context.origin, consentVersion: session.consentVersion, startedAt: now, conversionDeadlineAt: new Date(now.getTime() + policy.conversionWindowMs), retentionExpiresAt: session.retentionExpiresAt, entryKind: data.entryKind, definitionVersion: 1, businessTimeZone: context.timezone, cohortLocalDate: new Date(formatInTimeZone(now, context.timezone, 'yyyy-MM-dd')), channel: session.channel, normalizationVersion: session.normalizationVersion, acquisitionLinkId: session.acquisitionLinkId } })
+    const created = await tx.bookingFunnelAttempt.create({ data: { businessId: context.businessId, sessionId: session.id, bootstrapKey: data.bootstrapKey, origin: context.origin, consentVersion: session.consentVersion, startedAt: now, conversionDeadlineAt: new Date(now.getTime() + policy.conversionWindowMs), retentionExpiresAt: session.retentionExpiresAt, entryKind: data.entryKind, definitionVersion: 1, flowVersion: data.flowVersion, businessTimeZone: context.timezone, cohortLocalDate: new Date(formatInTimeZone(now, context.timezone, 'yyyy-MM-dd')), channel: session.channel, normalizationVersion: session.normalizationVersion, acquisitionLinkId: session.acquisitionLinkId } })
     return claimsForAttempt(session, created)
   })
   if (!claims) throw new AnalyticsCaptureError('budget')

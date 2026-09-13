@@ -4,9 +4,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { StepDateTime } from '@/components/booking/step-date-time'
 import type { BookingData } from '@/components/booking/wizard'
 const preview = vi.hoisted(() => vi.fn())
+const analytics = vi.hoisted(() => ({ revision: () => 1, attemptIdentity: () => 'attempt-v2', nextAvailabilityGeneration: () => 1, track: vi.fn() }))
 vi.mock('@/server/actions/availability', () => ({ getAvailabilityPreview: preview, getAvailableTimeSlotsResult: vi.fn() }))
+vi.mock('@/components/analytics/public-analytics', () => ({ usePublicAnalytics: () => analytics }))
 let root: Root
-afterEach(() => { act(() => root?.unmount()); document.body.replaceChildren(); vi.restoreAllMocks() })
+afterEach(() => { act(() => root?.unmount()); document.body.replaceChildren(); analytics.track.mockReset(); preview.mockReset(); vi.restoreAllMocks() })
 describe('combined calendar availability', () => {
   it('never enables a day from an obsolete service preview and converts the chosen local day after DST', async () => {
     let first!: (value: unknown) => void
@@ -38,5 +40,13 @@ describe('combined calendar availability', () => {
     expect(host.textContent).toContain('Reintentar')
     expect(host.textContent).not.toContain('No hay horas en este mes')
     expect(preview).toHaveBeenCalledWith(expect.objectContaining({ serviceIds: ['cut', 'nose'], days: expect.any(Number) }))
+    expect(analytics.track).toHaveBeenCalledWith(expect.objectContaining({ type: 'availability_preview_result', data: expect.objectContaining({ serviceIds: ['cut', 'nose'], result: 'error' }) }))
+  })
+  it('records an empty month distinctly when the time picker can never mount', async () => {
+    preview.mockResolvedValue({ ok: true, data: { today: '2026-09-12', windowEnd: '2026-09-30', professionals: [], days: [{ date: '2026-09-15', count: 0, firstSlot: null }] } })
+    const host = document.createElement('div'); document.body.append(host); root = createRoot(host)
+    await act(async () => root.render(<StepDateTime businessId="biz" timezone="America/Santiago" data={{ serviceId: 'cut', serviceIds: ['cut', 'nose'], professional: { kind: 'none' }, serviceModality: 'on_site', date: null } as BookingData} onDate={vi.fn()} onSelect={vi.fn()} onBack={vi.fn()} />))
+    expect(host.textContent).toContain('No hay horas en este mes')
+    expect(analytics.track).toHaveBeenCalledWith(expect.objectContaining({ type: 'availability_preview_result', data: expect.objectContaining({ serviceIds: ['cut', 'nose'], result: 'empty' }) }))
   })
 })

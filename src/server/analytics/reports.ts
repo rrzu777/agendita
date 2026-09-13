@@ -15,6 +15,7 @@ import { isDoomedBooking } from '@/lib/payments/confirmation-state'
 import { getBookingFunnelUrl } from '@/lib/business/urls'
 import { analyticsCoverage, readAnalyticsCohort, type AvailabilityDiagnostics } from './repository'
 import { readOwnerAnalyticsFlowBreakdowns } from './flow-breakdowns'
+import { aggregateCompletedBookingEconomics } from '@/lib/analytics/booking-economics'
 
 export function summarizeAnalyticsCells(cells: DailyMetricCell[], grain: Grain = 'total', dimensionKey?: string) {
   function counter(population: Population, metricKey: MetricKey) {
@@ -61,11 +62,11 @@ export interface OwnerAnalyticsReport extends Summary {
   trend: { date: string; timezone: string; complete: Summary['complete']; partial: Summary['partial']; visits: number }[]
   funnel: { population: Population; milestone: string; count: number }[]
   quality: { population: Population; lastStep: string; count: number }[]
-  services: { rows: { id: string; label: string; population: Population; interest: number; selected: number; conversion: Ratio; unobservedConversions: number }[]; page: number; pageSize: number; total: number }
+  services: { rows: { id: string; label: string; population: Population; interest: number; selected: number; additions: number; removals: number; incompatible: number; conversion: Ratio; unobservedConversions: number }[]; page: number; pageSize: number; total: number }
   channels: { rows: { id: string; summary: Summary }[]; scope: 'independent_grain' }
   links: { rows: { id: string; label: string; archived: boolean; summary: Summary }[]; page: number; pageSize: number; total: number }
   acquisitionLinks: { rows: { id: string; channel: string; campaignName: string; promotionId: string | null; createdAt: string; archivedAt: string | null; url: string }[]; page: number; pageSize: number; total: number }
-  currentBookings: { label: 'estado al consultar'; scope: 'all_bookings_created_in_period'; counts: { status: string; count: number }[]; overdueApproval: { count: number; lowerBound: boolean }; attendedByService: { serviceId: string; count: number }[] }
+  currentBookings: { label: 'estado al consultar'; scope: 'all_bookings_created_in_period'; currency: string; counts: { status: string; count: number }[]; overdueApproval: { count: number; lowerBound: boolean }; completedEconomics: { status: 'available'; bookings: number; amount: number; services: { serviceId: string; bookings: number; amount: number }[] } | { status: 'limit_exceeded'; bookings: null; amount: null; services: null } }
   redemptions: { label: 'canjes al consultar'; scope: 'all_redemptions_created_in_period'; rows: { promotionId: string; label: string; status: string; count: number }[]; page: number; pageSize: number; hasMore: boolean }
   opportunities: AnalyticsOpportunity[]
   opportunityNote: string
@@ -192,12 +193,15 @@ export async function getOwnerAnalyticsReport(input: unknown = {}, now = new Dat
       const selected = cells.filter(c => c.grain === 'service' && c.dimensionKey === id && c.population === population)
       const sum = (metric: MetricKey, column: 'numerator' | 'denominator' = 'numerator') => selected.filter(c => c.metricKey === metric).reduce((n, c) => n + c[column], 0)
       const n = sum('service_conversion'), d = sum('service_conversion', 'denominator')
-      serviceRows.push({ id, population, label: serviceLabels.find(s => s.id === id)?.name ?? 'Servicio eliminado', interest: sum('service_interest'), selected: sum('service_selected'), conversion: { numerator: n, denominator: d, rate: ratio(n, d) }, unobservedConversions: sum('service_conversion_unobserved') })
+      serviceRows.push({ id, population, label: serviceLabels.find(s => s.id === id)?.name ?? 'Servicio eliminado', interest: sum('service_interest'), selected: sum('service_selected'), additions: sum('service_addition'), removals: sum('service_removal'), incompatible: sum('service_incompatible'), conversion: { numerator: n, denominator: d, rate: ratio(n, d) }, unobservedConversions: sum('service_conversion_unobserved') })
     }
     const transactionalRange = { gte: analyticsDayRange(from, business.timezone).start, lt: analyticsDayRange(to, business.timezone).start }
     const bookingWhere = { businessId, createdAt: transactionalRange }
     const statuses = await tx.booking.groupBy({ by: ['status'], where: bookingWhere, _count: true })
-    const attended = await tx.booking.groupBy({ by: ['serviceId'], where: { ...bookingWhere, status: 'completed', serviceId: { in: page(servicePairs).map(s => s.id) } }, _count: true })
+    const economicsRows = await tx.booking.findMany({ where: { ...bookingWhere, status: 'completed' }, select: { id: true, status: true, finalAmount: true, serviceId: true, serviceLines: { select: { serviceId: true, finalAmount: true }, orderBy: { position: 'asc' } } }, orderBy: { id: 'asc' }, take: 10001 })
+    const completedEconomics: OwnerAnalyticsReport['currentBookings']['completedEconomics'] = economicsRows.length > 10000
+      ? { status: 'limit_exceeded', bookings: null, amount: null, services: null }
+      : { status: 'available', ...aggregateCompletedBookingEconomics(economicsRows) }
     const pending = await tx.booking.findMany({ where: { businessId, status: 'pending_confirmation', approvalExpiresAt: { lt: now } }, select: { status: true, paymentStatus: true, approvalExpiresAt: true, holdExpiresAt: true }, orderBy: { approvalExpiresAt: 'asc' }, take: 1001 })
     const overdue = pending.filter(b => b.status === 'pending_confirmation' && isDoomedBooking(b, now)).length
     const redemptions = await tx.promotionRedemption.groupBy({ by: ['promotionId', 'status'], where: { businessId, createdAt: transactionalRange }, orderBy: [{ promotionId: 'asc' }, { status: 'asc' }], _count: true, skip: (p.page - 1) * p.pageSize, take: p.pageSize + 1 })
@@ -217,7 +221,7 @@ export async function getOwnerAnalyticsReport(input: unknown = {}, now = new Dat
       services: { rows: serviceRows, page: p.page, pageSize: p.pageSize, total: servicePairs.length }, channels: { rows: dimensionIds('channel').filter(id => !p.channel || id === p.channel).map(id => ({ id, summary: summarizeAnalyticsCells(cells, 'channel', id) })), scope: 'independent_grain' },
       links: { rows: page(linkIds).map(id => ({ id, label: linkLabels.find(l => l.id === id)?.campaignName ?? (id === 'unknown' ? 'Sin enlace atribuido' : 'Enlace eliminado'), archived: Boolean(linkLabels.find(l => l.id === id)?.archivedAt), summary: summarizeAnalyticsCells(cells, 'acquisition_link', id) })), page: p.page, pageSize: p.pageSize, total: linkIds.length },
       acquisitionLinks: { rows: managedLinks.map(l => ({ id: l.id, channel: l.channel, campaignName: l.campaignName, promotionId: l.promotionId, createdAt: l.createdAt.toISOString(), archivedAt: l.archivedAt?.toISOString() ?? null, url: getBookingFunnelUrl(business, new URLSearchParams({ acq: l.token }).toString()) })), page: p.page, pageSize: p.pageSize, total: managedLinkCount },
-      currentBookings: { label: 'estado al consultar', scope: 'all_bookings_created_in_period', counts: statuses.map(s => ({ status: s.status, count: s._count })), overdueApproval: { count: overdue, lowerBound: pending.length === 1001 }, attendedByService: attended.map(s => ({ serviceId: s.serviceId, count: s._count })) },
+      currentBookings: { label: 'estado al consultar', scope: 'all_bookings_created_in_period', currency: business.currency, counts: statuses.map(s => ({ status: s.status, count: s._count })), overdueApproval: { count: overdue, lowerBound: pending.length === 1001 }, completedEconomics },
       redemptions: { label: 'canjes al consultar', scope: 'all_redemptions_created_in_period', rows: redemptions.slice(0, p.pageSize).map(r => ({ promotionId: r.promotionId, label: promotions.find(p => p.id === r.promotionId)?.name ?? 'Promoción eliminada', status: r.status, count: r._count })), page: p.page, pageSize: p.pageSize, hasMore: redemptions.length > p.pageSize }, opportunities, opportunityNote: opportunities.length ? 'Señales descriptivas, no causas ni significancia estadística. Los detalles no retenidos no se reconstruyen.' : 'Se requieren 20 intentos completos y maduros con disponibilidad no errónea, 5 afectados y al menos 30% con búsqueda vacía.',
       filter: { channel: p.channel ?? null, acquisitionLinkId: p.acquisitionLinkId ?? null, serviceId: p.serviceId ?? null, scope: 'independent_grains', unsupportedIntersections: true },
     }

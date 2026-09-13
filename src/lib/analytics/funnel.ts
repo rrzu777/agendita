@@ -1,10 +1,10 @@
-import type { SelectionContext } from './contracts'
+import { selectionServiceIds, type SelectionContext } from './contracts'
 import type { AttemptFact, AttemptFlow, AttemptProjection, BookingFact, FlowErrorKey, Milestone, ObservedEvent } from './report-types'
 import { FLOW_ERROR_KEYS } from './flow-breakdowns'
 
 const order: Milestone[] = ['started', 'service', 'professional', 'date', 'time', 'customer', 'payment', 'submit']
 function sameService(a: SelectionContext | null, b: SelectionContext | null): boolean {
-  return !!a && !!b && a.serviceId === b.serviceId && a.modality === b.modality
+  return !!a && !!b && canonical([...selectionServiceIds(a)].sort()) === canonical([...selectionServiceIds(b)].sort()) && a.modality === b.modality
 }
 function sameContext(a: SelectionContext | null, b: SelectionContext | null): boolean {
   return sameService(a, b) && JSON.stringify(a!.professional) === JSON.stringify(b!.professional)
@@ -32,6 +32,9 @@ export function reduceFunnelAttempt({ attempt, events, bookings, now }: { attemp
   let maxCoherentContext: SelectionContext | null = null
   const considered = new Set<string>()
   const selected = new Set<string>()
+  const additions = new Set<string>()
+  const removals = new Set<string>()
+  const incompatible = new Set<string>()
   const submissions: { revision: number; context: SelectionContext; complete: boolean }[] = []
   const generations = new Map<string, number>()
   const availability = { hasValidResult: false, hasEmpty: false, hasError: false, emptyReasons: [] as string[] }
@@ -102,6 +105,11 @@ export function reduceFunnelAttempt({ attempt, events, bookings, now }: { attemp
         break
       case 'step_viewed': lastObservedStep = event.data.step; break
       case 'service_considered': considered.add(event.data.serviceId); break
+      case 'service_selection_changed':
+        if (event.data.result === 'incompatible') incompatible.add(event.data.serviceId)
+        else if (event.data.action === 'add') additions.add(event.data.serviceId)
+        else removals.add(event.data.serviceId)
+        break
       case 'selection_context_changed': {
         const next = event.data.context
         flowErrors.clear()
@@ -123,7 +131,7 @@ export function reduceFunnelAttempt({ attempt, events, bookings, now }: { attemp
         break
       }
       case 'service_selected': {
-        const next = { serviceId: event.data.serviceId, modality: event.data.modality, professional: event.data.professional }
+        const next: SelectionContext = { serviceId: event.data.serviceId, ...(event.data.serviceIds ? { serviceIds: event.data.serviceIds } : {}), modality: event.data.modality, professional: event.data.professional }
         if (!sameContext(context, next)) { flowErrors.clear(); flow.professional = null }
         if (!sameService(context, next)) { invalidate('service'); localDate = null }
         else if (!sameContext(context, next)) { evidence.delete('professional'); invalidate('time') }
@@ -131,7 +139,8 @@ export function reduceFunnelAttempt({ attempt, events, bookings, now }: { attemp
         requiredProfessional = event.data.professionalStepRequired
         if (!requiredProfessional) flow.professional = { kind: next.professional.kind, choice: 'not_required' }
         else if (flow.professional?.choice !== 'explicit') flow.professional = { kind: next.professional.kind, choice: 'not_observed' }
-        selected.add(context.serviceId)
+        if (attempt.flowVersion === 2) selected.clear()
+        for (const serviceId of selectionServiceIds(context)) selected.add(serviceId)
         lastObservedStep = 'service'
         mark('service')
         break
@@ -175,6 +184,18 @@ export function reduceFunnelAttempt({ attempt, events, bookings, now }: { attemp
         }
         break
       }
+      case 'availability_preview_result': {
+        if (!sameContext(context, event.data)) break
+        const key = canonical([revision, context, event.data.localMonth, 'preview'])
+        if (event.data.requestGeneration <= (generations.get(key) ?? 0)) break
+        generations.set(key, event.data.requestGeneration)
+        if (event.data.result === 'error') { availability.hasError = true; flowErrors.add('availability:error') }
+        else {
+          availability.hasValidResult = true
+          if (event.data.result === 'empty') { availability.hasEmpty = true; if (!availability.emptyReasons.includes('unknown')) availability.emptyReasons.push('unknown') }
+        }
+        break
+      }
       case 'customer_step_completed': lastObservedStep = 'customer'; mark('customer'); break
       // Validation alone does not establish that the current payment preparation changed.
       // Actual changes arrive as selection_context_changed/payment_branch_viewed.
@@ -210,15 +231,15 @@ export function reduceFunnelAttempt({ attempt, events, bookings, now }: { attemp
   }
   const validBookings = [...new Map(bookings.filter((b) => b.businessId === attempt.businessId && b.analyticsAttemptId === attempt.id && b.createdAt >= attempt.startedAt && b.createdAt < attempt.conversionDeadlineAt && b.createdAt <= now).map((b) => [b.id, b])).values()]
   const converted = validBookings.length > 0
-  const convertedServices = [...new Set(validBookings.map((b) => b.serviceId))].sort()
-  const conversionPathComplete = validBookings.some((b) => submissions.some((s) => s.complete && s.revision === b.analyticsSelectionRevision && s.context.serviceId === b.serviceId && s.context.modality === b.modality))
+  const convertedServices = [...new Set(validBookings.flatMap((b) => b.serviceIds ?? [b.serviceId]))].sort()
+  const conversionPathComplete = validBookings.some((b) => submissions.some((s) => s.complete && s.revision === b.analyticsSelectionRevision && canonical([...selectionServiceIds(s.context)].sort()) === canonical([...(b.serviceIds ?? [b.serviceId])].sort()) && s.context.modality === b.modality))
   const mature = now >= attempt.conversionDeadlineAt
   return {
     attempt, mature, converted, bookingsCreated: validBookings.length, conversionPathComplete, maxCoherentMilestones, maxCoherentContext,
     flow: { ...flow, errors: FLOW_ERROR_KEYS.filter(key => flowErrors.has(key)) },
     finalContext: context, finalRevision: revision, lastObservedStep, quality: gap ? 'incomplete' : 'observed',
     outcome: !mature ? 'in_progress' : converted ? 'converted' : gap || lastObservedStep === null ? 'measurement_incomplete' : 'known_interruption',
-    consideredServices: [...considered].sort(), selectedServices: [...selected].sort(), convertedServices,
+    consideredServices: [...considered].sort(), selectedServices: [...selected].sort(), serviceAdditions: [...additions].sort(), serviceRemovals: [...removals].sort(), incompatibleServices: [...incompatible].sort(), convertedServices,
     convertedServicesWithInterest: convertedServices.filter((s) => considered.has(s)),
     convertedServicesWithoutInterest: convertedServices.filter((s) => !considered.has(s)), availability,
   }

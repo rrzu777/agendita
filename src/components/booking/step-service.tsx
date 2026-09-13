@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { usePublicAnalytics } from '@/components/analytics/public-analytics'
 import type { BookingData } from './wizard'
 import type { Service } from '@prisma/client'
+import type { ServiceModality } from '@prisma/client'
 import { formatDuration } from '@/lib/format-duration'
 import { formatMoney } from '@/lib/money'
 import { MODALITY_LABELS } from '@/lib/services/modality'
@@ -19,9 +20,10 @@ interface StepServiceProps {
   onContinue: () => void
   onInteraction?: () => void
   selectionError?: string | null
+  selectionCompatible?: (serviceIds: string[], modality: ServiceModality | null) => boolean
 }
 
-export function StepService({ data, services, currency, onSelect, onContinue, onInteraction, selectionError }: StepServiceProps) {
+export function StepService({ data, services, currency, onSelect, onContinue, onInteraction, selectionError, selectionCompatible }: StepServiceProps) {
   const analytics = usePublicAnalytics()
   const [error, setError] = useState<string | null>(null)
   const selectedIds = wizardServiceIds(data)
@@ -34,12 +36,18 @@ export function StepService({ data, services, currency, onSelect, onContinue, on
     onInteraction?.()
     analytics.track({ type: 'service_considered', data: { serviceId: service.id } })
     const ids = selectedIds.includes(service.id) ? selectedIds.filter(id => id !== service.id) : [...selectedIds, service.id]
+    const action = selectedIds.includes(service.id) ? 'remove' as const : 'add' as const
     try {
       const selection = wizardServiceFields(ids, services)
       const modality = data.serviceModality && selection.serviceModalities.includes(data.serviceModality) ? data.serviceModality : selection.serviceModalities.length === 1 ? selection.serviceModalities[0] : null
+      const result = selectionCompatible?.(ids, modality) === false ? 'incompatible' as const : 'accepted' as const
+      analytics.track({ type: 'service_selection_changed', data: { serviceId: service.id, action, result, selectedServiceIds: ids } })
       onSelect({ ...selection, serviceModality: modality, ...(modality !== data.serviceModality ? { serviceAddress: '' } : {}) })
       setError(null)
-    } catch (e) { setError(e instanceof Error ? e.message : 'No pudimos agregar el servicio') }
+    } catch (e) {
+      analytics.track({ type: 'service_selection_changed', data: { serviceId: service.id, action, result: 'incompatible', selectedServiceIds: selectedIds } })
+      setError(e instanceof Error ? e.message : 'No pudimos agregar el servicio')
+    }
   }
   return (
     <div>

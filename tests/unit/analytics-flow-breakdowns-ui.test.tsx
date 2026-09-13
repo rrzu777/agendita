@@ -5,7 +5,7 @@ import type { FlowBreakdownGroup, FlowBreakdownsReport } from '@/lib/analytics/r
 
 function group(entryKind: FlowBreakdownGroup['entryKind'], maturity: FlowBreakdownGroup['maturity'], attempts: number): FlowBreakdownGroup {
   return {
-    entryKind, maturity, attempts, incompleteCapture: 0,
+    flowVersion: 1, entryKind, maturity, attempts, incompleteCapture: 0,
     professional: { not_observed: attempts, 'none:not_required': 0, 'none:not_observed': 0, 'anyone:explicit': 0, 'anyone:not_required': 0, 'anyone:not_observed': 0, 'person:explicit': 0, 'person:not_required': 0, 'person:not_observed': 0 },
     screen: { not_observed: attempts, cobrar: 0, 'sin-abono': 0, 'sin-pago-online': 0, verificando: 0 },
     condition: { not_observed: attempts, package: 0, promotion_zero: 0, free_service: 0, no_deposit: 0, deposit_required: 0 },
@@ -40,20 +40,20 @@ function rows(host: Element | null, label: string) {
 describe('FlowBreakdowns', () => {
   it('keeps the four entry/maturity populations and incomplete capture counts separate', () => {
     const host = render(available())
-    for (const [label, count] of [['Entrada completa · maduros', 7], ['Entrada completa · en curso', 3], ['Entrada parcial · maduros', 5], ['Entrada parcial · en curso', 2]] as const) {
+    for (const [label, count] of [['Flujo v1 · entrada completa · maduros', 7], ['Flujo v1 · entrada completa · en curso', 3], ['Flujo v1 · entrada parcial · maduros', 5], ['Flujo v1 · entrada parcial · en curso', 2]] as const) {
       const population = host.querySelector(`section[aria-label="${label}"]`)!
       expect(population).not.toBeNull()
       expect(population.querySelector('h3')?.textContent).toBe(label)
       expect(population.querySelector('[data-flow-count]')?.textContent).toBe(`${count} intentos observados`)
     }
-    expect(host.querySelector('section[aria-label="Entrada completa · maduros"]')?.textContent).toContain('2 con captura incompleta')
+    expect(host.querySelector('section[aria-label="Flujo v1 · entrada completa · maduros"]')?.textContent).toContain('2 con captura incompleta')
     expect(host.textContent).toContain('24 h')
     expect(host.textContent).toContain('no se comparan')
   })
 
   it('distinguishes explicit professionals, automatic optional steps and unknown evidence', () => {
     const host = render(available())
-    const mature = host.querySelector('section[aria-label="Entrada completa · maduros"]')!
+    const mature = host.querySelector('section[aria-label="Flujo v1 · entrada completa · maduros"]')!
     expect(rows(mature, 'Elección profesional')).toEqual(['Persona específica · elección explícita2', 'Cualquier profesional · elección explícita1', 'Cualquier profesional · paso no requerido1', 'Sin profesional · paso no requerido1', 'No observado2'])
     expect(host.textContent).toContain('no significa que no eligió')
     expect(host.textContent).not.toContain('person:explicit')
@@ -61,7 +61,7 @@ describe('FlowBreakdowns', () => {
   })
 
   it('separates payment screen, economic condition, offered methods and explicit selection', () => {
-    const mature = render(available()).querySelector('section[aria-label="Entrada completa · maduros"]')!
+    const mature = render(available()).querySelector('section[aria-label="Flujo v1 · entrada completa · maduros"]')!
     expect(rows(mature, 'Pantalla de pago')).toEqual(['Cobro4', 'Sin abono1', 'Verificando1', 'Sin pago en línea1'])
     expect(rows(mature, 'Condición económica')).toEqual(['Abono requerido4', 'Paquete1', 'Promoción con importe cero1', 'Sin abono requerido1'])
     expect(rows(mature, 'Métodos ofrecidos')).toEqual(['En línea4', 'Transferencia3', 'Manual2', 'Ningún método ofrecido1', 'No observado1'])
@@ -76,8 +76,8 @@ describe('FlowBreakdowns', () => {
     expect(host.textContent).toContain('Métodos ofrecidos y errores no son aditivos')
     expect(host.textContent).toContain('Elegido no significa pagado')
     expect(host.textContent).toContain('no prueba abandono, pérdida comercial ni estado financiero')
-    expect(rows(host.querySelector('section[aria-label="Entrada completa · maduros"]')!, 'Errores observados')).toEqual(['Disponibilidad · error2', 'Promoción rechazada · inválida1', 'Envío con error · red1'])
-    expect(host.querySelector('section[aria-label="Entrada parcial · maduros"]')?.textContent).toContain('Sin errores observados en este grupo')
+    expect(rows(host.querySelector('section[aria-label="Flujo v1 · entrada completa · maduros"]')!, 'Errores observados')).toEqual(['Disponibilidad · error2', 'Promoción rechazada · inválida1', 'Envío con error · red1'])
+    expect(host.querySelector('section[aria-label="Flujo v1 · entrada parcial · maduros"]')?.textContent).toContain('Sin errores observados en este grupo')
   })
 
   it('shows the exclusive window, cutoff and frozen zones without widening the selected period', () => {

@@ -9,12 +9,22 @@ export const professionalSchema = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('anyone') }),
   z.strictObject({ kind: z.literal('person'), professionalId: dimensionIdSchema }),
 ])
-export const selectionContextSchema = z.strictObject({ serviceId: dimensionIdSchema, modality: z.enum(['on_site', 'at_home', 'online']), professional: professionalSchema })
+const selectionFields = {
+  serviceId: dimensionIdSchema,
+  serviceIds: z.array(dimensionIdSchema).min(1).max(10).refine((xs) => new Set(xs).size === xs.length).optional(),
+  modality: z.enum(['on_site', 'at_home', 'online']),
+  professional: professionalSchema,
+}
+export const selectionContextSchema = z.strictObject(selectionFields).refine((value) => !value.serviceIds || value.serviceIds[0] === value.serviceId, 'Primary service must be first')
 export type SelectionContext = z.infer<typeof selectionContextSchema>
+export function selectionServiceIds(context: SelectionContext): string[] {
+  return context.serviceIds ?? [context.serviceId]
+}
 export const localDateSchema = z.string().regex(/^(20\d{2}|2100)-\d{2}-\d{2}$/).refine((value) => {
   const date = new Date(`${value}T00:00:00.000Z`)
   return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value
 }, 'Invalid calendar date')
+export const localMonthSchema = z.string().regex(/^(20\d{2}|2100)-(0[1-9]|1[0-2])$/)
 export const stepSchema = z.enum(['service', 'professional', 'date', 'time', 'customer', 'payment', 'confirmation'])
 export const timeBucketSchema = z.enum(['00_06', '06_12', '12_18', '18_24'])
 export const emptyReasonSchema = z.enum(['outside_booking_window', 'lead_time_restricted', 'not_offered', 'no_capacity', 'unknown'])
@@ -22,7 +32,7 @@ export const paymentMethodSchema = z.enum(['online', 'transfer', 'manual'])
 const common = { version: z.literal(1), eventId: z.uuid(), sequence: z.number().int().min(1).max(2147483647) }
 const revision = z.number().int().min(1).max(2147483647)
 const empty = z.strictObject({})
-const context = selectionContextSchema.shape
+const context = selectionFields
 const payment = z.strictObject({
   screen: z.enum(['sin-abono', 'verificando', 'sin-pago-online', 'cobrar']),
   condition: z.enum(['package', 'promotion_zero', 'free_service', 'no_deposit', 'deposit_required']),
@@ -32,17 +42,24 @@ function event<T extends string, S extends z.ZodType>(type: T, data: S) {
   return z.strictObject({ ...common, type: z.literal(type), selectionRevision: revision, data })
 }
 /** Browser envelope contains no tenant/session/attempt identity or client clock. */
-export const analyticsEventSchema = z.discriminatedUnion('type', [
+const analyticsEventUnion = z.discriminatedUnion('type', [
   z.strictObject({ ...common, type: z.literal('public_profile_viewed'), data: empty }),
   z.strictObject({ ...common, type: z.literal('booking_entry_viewed'), data: empty }),
   event('funnel_started', empty),
   event('step_viewed', z.strictObject({ step: stepSchema })),
   event('service_considered', z.strictObject({ serviceId: dimensionIdSchema })),
+  event('service_selection_changed', z.strictObject({
+    serviceId: dimensionIdSchema,
+    action: z.enum(['add', 'remove']),
+    result: z.enum(['accepted', 'incompatible']),
+    selectedServiceIds: z.array(dimensionIdSchema).max(10).refine((xs) => new Set(xs).size === xs.length),
+  })),
   event('service_selected', z.strictObject({ ...context, professionalStepRequired: z.boolean() })),
   event('professional_selected', selectionContextSchema),
   event('date_selected', z.strictObject({ ...context, localDate: localDateSchema })),
   event('time_selected', z.strictObject({ ...context, localDate: localDateSchema, timeBucket: timeBucketSchema })),
   event('availability_result', z.strictObject({ ...context, localDate: localDateSchema, queryId: z.uuid(), requestGeneration: z.number().int().min(1).max(100000), result: z.enum(['available', 'empty', 'error']), reason: emptyReasonSchema.optional() }).refine((data) => data.result === 'empty' || data.reason === undefined)),
+  event('availability_preview_result', z.strictObject({ ...context, localMonth: localMonthSchema, queryId: z.uuid(), requestGeneration: z.number().int().min(1).max(100000), result: z.enum(['available', 'empty', 'error']) })),
   event('customer_step_completed', empty),
   event('promotion_result', z.discriminatedUnion('result', [
     z.strictObject({ result: z.literal('accepted'), promotionId: dimensionIdSchema }),
@@ -55,6 +72,11 @@ export const analyticsEventSchema = z.discriminatedUnion('type', [
   event('selection_context_changed', z.strictObject({ reason: z.enum(['service', 'modality', 'professional', 'date', 'time', 'payment', 'restore']), context: selectionContextSchema.nullable(), localDate: localDateSchema.nullable() })),
   event('checkout_redirected', z.strictObject({ provider: z.literal('mercado_pago') })),
 ])
+export const analyticsEventSchema = analyticsEventUnion.refine((value) => {
+  const data = value.data as { serviceId?: string; serviceIds?: string[]; context?: SelectionContext | null }
+  const candidate = data.context ?? data
+  return !candidate.serviceIds || candidate.serviceIds[0] === candidate.serviceId
+}, 'Primary service must be first')
 export type AnalyticsEventInput = z.infer<typeof analyticsEventSchema>
 export type AnalyticsEventType = AnalyticsEventInput['type']
 export function eventScope(type: AnalyticsEventType): 'session' | 'attempt' {

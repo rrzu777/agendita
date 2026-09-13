@@ -9,6 +9,27 @@ describe('coherent observed funnel and authoritative conversion', () => {
     expect(result).toMatchObject({ converted: true, bookingsCreated: 2, conversionPathComplete: true, consideredServices: ['service-a', 'service-b', 'service-c'] })
     expect(result.maxCoherentMilestones).not.toContain('professional')
   })
+  it('counts one multi-service booking conversion while crediting every persisted service line', () => {
+    const multi = { ...contextA, serviceIds: ['service-a', 'service-b'] }
+    const events = [
+      event(1, 'funnel_started'),
+      event(2, 'service_considered', { serviceId: 'service-a' }),
+      event(3, 'service_considered', { serviceId: 'service-b' }),
+      event(4, 'service_selected', { ...multi, professionalStepRequired: false }),
+      event(5, 'date_selected', { ...multi, localDate: '2026-08-10' }),
+      event(6, 'time_selected', { ...multi, localDate: '2026-08-10', timeBucket: '12_18' }),
+      event(7, 'customer_step_completed'),
+      event(8, 'payment_branch_viewed', { screen: 'sin-abono', condition: 'no_deposit', offeredMethods: [] }),
+      event(9, 'booking_submit_result', { result: 'submitted' }),
+    ]
+    const result = reduceFunnelAttempt({ attempt: { ...attempt(), flowVersion: 2 }, events, bookings: [{ ...booking(), serviceIds: ['service-a', 'service-b'] }], now })
+    expect(result).toMatchObject({ converted: true, bookingsCreated: 1, conversionPathComplete: true, selectedServices: ['service-a', 'service-b'], convertedServices: ['service-a', 'service-b'] })
+  })
+  it('preserves historical v1 cumulative selection semantics while v2 keeps only the final selection', () => {
+    const events = [event(1, 'service_selected', { ...contextA, professionalStepRequired: false }), event(2, 'service_selected', { ...contextB, professionalStepRequired: false })]
+    expect(reduceFunnelAttempt({ attempt: attempt(), events, bookings: [], now }).selectedServices).toEqual(['service-a', 'service-b'])
+    expect(reduceFunnelAttempt({ attempt: { ...attempt(), flowVersion: 2 }, events, bookings: [], now }).selectedServices).toEqual(['service-b'])
+  })
   it('fixture 5: authoritative booking without interest keeps overall conversion only', () => {
     expect(reduceFunnelAttempt({ attempt: attempt(), events: [], bookings: [booking()], now })).toMatchObject({ converted: true, conversionPathComplete: false, consideredServices: [], convertedServicesWithInterest: [], convertedServicesWithoutInterest: ['service-a'] })
   })
@@ -41,6 +62,10 @@ describe('coherent observed funnel and authoritative conversion', () => {
     const data = { ...contextA, localDate: '2026-08-10', queryId: query }
     const events = [...completePath().slice(0, 4), event(5, 'availability_result', { ...data, requestGeneration: 2, result: 'available' }), event(6, 'availability_result', { ...data, requestGeneration: 1, result: 'empty', reason: 'no_capacity' }), event(7, 'availability_result', { ...data, requestGeneration: 3, result: 'error' })]
     expect(reduceFunnelAttempt({ attempt: attempt(), events, bookings: [], now }).availability).toEqual({ hasValidResult: true, hasEmpty: false, hasError: true, emptyReasons: [] })
+  })
+  it('counts an empty monthly preview even when no date or time picker can be selected', () => {
+    const events = [event(1, 'funnel_started'), event(2, 'service_selected', { ...contextA, professionalStepRequired: false }), event(3, 'availability_preview_result', { ...contextA, localMonth: '2026-08', queryId: crypto.randomUUID(), requestGeneration: 1, result: 'empty' })]
+    expect(reduceFunnelAttempt({ attempt: { ...attempt(), flowVersion: 2 }, events, bookings: [], now }).availability).toEqual({ hasValidResult: true, hasEmpty: true, hasError: false, emptyReasons: ['unknown'] })
   })
   it('does not count cloned/replayed events or assign known capture gaps to a dropoff', () => {
     const path = completePath().slice(0, 5)

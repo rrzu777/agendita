@@ -11,6 +11,7 @@ import { formatBookingDateTime } from '@/lib/bookings/format-booking-datetime'
 import { Button } from '@/components/ui/button'
 import type { BookingData } from './wizard'
 import { StepTime } from './step-time'
+import { usePublicAnalytics } from '@/components/analytics/public-analytics'
 
 type Preview = Extract<Awaited<ReturnType<typeof getAvailabilityPreview>>, { ok: true }>['data']
 export function StepDateTime({ businessId, timezone, data, onDate, onSelect, onBack }: {
@@ -19,6 +20,7 @@ export function StepDateTime({ businessId, timezone, data, onDate, onSelect, onB
   onSelect: (slot: { start: Date; end: Date }) => void
   onBack: () => void
 }) {
+  const analytics = usePublicAnalytics()
   const [today, setToday] = useState('')
   const [month, setMonth] = useState(() => data.date ? getLocalDateStr(data.date, timezone).slice(0, 7) : '')
   useEffect(() => {
@@ -36,13 +38,22 @@ export function StepDateTime({ businessId, timezone, data, onDate, onSelect, onB
   useEffect(() => {
     if (!month) return
     let cancelled = false
+    const revision = analytics.revision()
+    const captureIdentity = analytics.attemptIdentity()
+    const queryId = captureIdentity ? crypto.randomUUID() : null
+    const requestGeneration = captureIdentity ? analytics.nextAvailabilityGeneration() : null
+    const serviceIds = JSON.parse(selection) as string[]
+    function observe(result: 'available' | 'empty' | 'error') {
+      if (!queryId || requestGeneration === null || analytics.revision() !== revision || analytics.attemptIdentity() !== captureIdentity || !data.serviceId || !data.serviceModality) return
+      analytics.track({ type: 'availability_preview_result', data: { serviceId: data.serviceId, ...(serviceIds.length > 1 ? { serviceIds } : {}), modality: data.serviceModality, professional: data.professional.kind === 'person' ? { kind: 'person', professionalId: data.professional.id } : data.professional, localMonth: month, queryId, requestGeneration, result } })
+    }
     getAvailabilityPreview({ businessId, serviceIds: JSON.parse(selection), professional: data.professional, modality: data.serviceModality, from: `${month}-01`, days: days.length })
-      .then(result => { if (!cancelled) setResponse(result.ok ? { key, value: result.data } : { key, error: result.error }) })
-      .catch(() => { if (!cancelled) setResponse({ key, error: 'No pudimos consultar la disponibilidad. Revisa tu conexión.' }) })
+      .then(result => { if (!cancelled) { setResponse(result.ok ? { key, value: result.data } : { key, error: result.error }); observe(result.ok ? result.data.days.some(day => day.count > 0) ? 'available' : 'empty' : 'error') } })
+      .catch(() => { if (!cancelled) { setResponse({ key, error: 'No pudimos consultar la disponibilidad. Revisa tu conexión.' }); observe('error') } })
     return () => { cancelled = true }
     // key includes every booking dimension; contacts/consent do not invalidate availability.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, retry])
+  }, [key, retry, analytics])
   const current = response?.key === key ? response : null
   const preview = current?.value
   const selectedDate = data.date ? getLocalDateStr(data.date, timezone) : null

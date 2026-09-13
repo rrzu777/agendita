@@ -93,4 +93,10 @@ describe('attempt-based flow distributions', () => {
     expect(aggregateFlowBreakdowns([p])[0]).toMatchObject({ attempts: 1, incompleteCapture: 1, errors: { 'promotion:rejected:invalid': 1 } })
     expect(aggregateFlowBreakdowns([]).map(g => g.attempts)).toEqual([0, 0, 0, 0])
   })
+  it('keeps old and new journey shapes in separate flow-version groups', () => {
+    const oldFlow = project(completePath())
+    const newFlow = { ...project(completePath()), attempt: { ...project(completePath()).attempt, flowVersion: 2 as const } }
+    const groups = aggregateFlowBreakdowns([oldFlow, newFlow]).filter(group => group.entryKind === 'complete' && group.maturity === 'mature')
+    expect(groups.map(group => [group.flowVersion, group.attempts])).toEqual([[1, 1], [2, 1]])
+  })
 })

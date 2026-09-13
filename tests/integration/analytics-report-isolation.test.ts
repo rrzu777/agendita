@@ -127,7 +127,7 @@ describe('report authorization, current evidence and isolated DTO', () => {
     await publishAnalyticsCohort(f.cohort)
     const report = await getOwnerAnalyticsReport({ ...period, pageSize: 1, page: 2 }, f.cohort.now)
     expect(report.services.rows).toMatchObject([{ id: f.service.id, population: 'partial_attempts' }])
-    expect(report.currentBookings.attendedByService).toEqual([{ serviceId: f.service.id, count: 1 }])
+    expect(report.currentBookings.completedEconomics).toMatchObject({ status: 'available', bookings: 1, services: [{ serviceId: f.service.id, bookings: 1 }] })
   })
   it('suppresses 28-day vs 2-day comparisons even when both populations contain mature conversions', async () => {
     const f = await ownerFixture()

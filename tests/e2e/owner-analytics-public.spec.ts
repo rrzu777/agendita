@@ -12,16 +12,16 @@ test.afterAll(() => prisma.$disconnect())
 
 async function pickTime(page: Page, daysAhead: number, stopAtTime = false) {
   await page.getByRole('button').filter({ hasText: 'Servicio de prueba' }).click()
-  await expect(page.getByRole('heading', { name: 'Elige una fecha' })).toBeVisible()
+  await page.getByRole('button', { name: 'Continuar', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Elige fecha y hora' })).toBeVisible()
   const date = new Date()
   date.setDate(date.getDate() + daysAhead)
   const now = new Date()
   const months = (date.getFullYear() - now.getFullYear()) * 12 + date.getMonth() - now.getMonth()
   for (let index = 0; index < months; index++) await page.getByRole('button', { name: 'Mes siguiente' }).click()
-  await page.getByRole('button', { name: String(date.getDate()), exact: true }).click()
-  await page.getByRole('button', { name: 'Continuar', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Elige una hora' })).toBeVisible()
-  await page.getByRole('button').filter({ hasText: /^\d{2}:\d{2}$/ }).first().click()
+  const localDate = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+  await page.locator(`button[data-day="${localDate}"]`).click()
+  await page.getByRole('button', { name: /^\d{2}:\d{2}\s+Hasta \d{2}:\d{2}$/ }).first().click()
   if (!stopAtTime) await page.getByRole('button', { name: 'Continuar', exact: true }).click()
 }
 

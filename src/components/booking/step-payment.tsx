@@ -219,7 +219,7 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
         branchEvidence.current = ''
       }
       if (economicEvidence.current && economicEvidence.current !== economicKey) {
-        analytics.changeSelection({ reason: 'payment', context: data.serviceId && data.serviceModality ? { serviceId: data.serviceId, modality: data.serviceModality, professional: data.professional.kind === 'person' ? { kind: 'person', professionalId: data.professional.id } : data.professional } : null, localDate: data.date ? formatInTimeZone(data.date, timezone, 'yyyy-MM-dd') : null })
+        analytics.changeSelection({ reason: 'payment', context: data.serviceId && data.serviceModality ? { serviceId: data.serviceId, ...(wizardServiceIds(data).length > 1 ? { serviceIds: wizardServiceIds(data) } : {}), modality: data.serviceModality, professional: data.professional.kind === 'person' ? { kind: 'person', professionalId: data.professional.id } : data.professional } : null, localDate: data.date ? formatInTimeZone(data.date, timezone, 'yyyy-MM-dd') : null })
         branchEvidence.current = ''
       }
       economicEvidence.current = economicKey

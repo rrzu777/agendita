@@ -18,13 +18,16 @@ function counters<K extends string>(keys: readonly K[]): Record<K, number> {
 
 /** One input projection represents one attempt; identities never enter the output. */
 export function aggregateFlowBreakdowns(projections: AttemptProjection[]): FlowBreakdownGroup[] {
-  const groups: FlowBreakdownGroup[] = (['complete', 'partial'] as const).flatMap(entryKind => (['mature', 'in_progress'] as const).map(maturity => ({
-    entryKind, maturity, attempts: 0, incompleteCapture: 0,
+  const versions = [...new Set(projections.map(p => p.attempt.flowVersion === 2 ? 2 as const : 1 as const))].sort()
+  if (!versions.length) versions.push(1)
+  const groups: FlowBreakdownGroup[] = versions.flatMap(flowVersion => (['complete', 'partial'] as const).flatMap(entryKind => (['mature', 'in_progress'] as const).map(maturity => ({
+    flowVersion, entryKind, maturity, attempts: 0, incompleteCapture: 0,
     professional: counters(FLOW_PROFESSIONAL_KEYS), screen: counters(FLOW_SCREEN_KEYS), condition: counters(FLOW_CONDITION_KEYS),
     selectedMethod: counters(FLOW_METHOD_KEYS), offeredMethods: counters(FLOW_OFFERED_METHOD_KEYS), errors: counters(FLOW_ERROR_KEYS),
-  })))
+  }))))
   for (const p of projections) {
-    const group = groups[(p.attempt.entryKind === 'partial' ? 2 : 0) + (p.mature ? 0 : 1)]
+    const version = p.attempt.flowVersion === 2 ? 2 : 1
+    const group = groups.find(g => g.flowVersion === version && g.entryKind === p.attempt.entryKind && g.maturity === (p.mature ? 'mature' : 'in_progress'))!
     group.attempts++
     if (p.quality === 'incomplete') group.incompleteCapture++
     const { professional, payment, errors } = p.flow

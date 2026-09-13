@@ -2,7 +2,7 @@ import 'server-only'
 import { prisma } from '@/lib/db'
 import type { Prisma, AnalyticsSession, BookingFunnelAttempt } from '@prisma/client'
 import type { AnalyticsClaims } from '@/lib/analytics/credential'
-import { analyticsEventSchema, selectionContextSchema, type AnalyticsEventInput } from '@/lib/analytics/contracts'
+import { analyticsEventSchema, selectionContextSchema, selectionServiceIds, type AnalyticsEventInput } from '@/lib/analytics/contracts'
 import { aggregateDailyMetrics } from '@/lib/analytics/daily-metrics'
 import { reduceFunnelAttempt } from '@/lib/analytics/funnel'
 import type { AttemptFact, CohortCoverage, DailyMetricCell, SessionFact } from '@/lib/analytics/report-types'
@@ -74,11 +74,11 @@ export async function readAnalyticsCohort(tx: Prisma.TransactionClient, coverage
     if (sources > 10000) throw new Error('Analytics source limit exceeded')
     for (const a of page) {
       const stored = await tx.bookingFunnelEvent.findMany({ where: { businessId: a.businessId, sessionId: a.sessionId, attemptId: a.id }, orderBy: { sequence: 'asc' }, take: 201 })
-      const bookings = await tx.booking.findMany({ where: { businessId: a.businessId, analyticsAttemptId: a.id, createdAt: { gte: a.startedAt, lt: a.conversionDeadlineAt } }, select: { id: true, businessId: true, analyticsAttemptId: true, createdAt: true, serviceId: true, modality: true, analyticsSelectionRevision: true }, take: 1001 })
+      const bookings = await tx.booking.findMany({ where: { businessId: a.businessId, analyticsAttemptId: a.id, createdAt: { gte: a.startedAt, lt: a.conversionDeadlineAt } }, select: { id: true, businessId: true, analyticsAttemptId: true, createdAt: true, serviceId: true, modality: true, analyticsSelectionRevision: true, serviceLines: { select: { serviceId: true }, orderBy: { position: 'asc' } } }, take: 1001 })
       if (stored.length > 200 || bookings.length > 1000) throw new Error('Analytics stream limit exceeded')
-      const attempt: AttemptFact = { ...a, knownCaptureGap: a.knownCaptureGap || a.acceptedEventCount !== stored.length, cohortLocalDate: a.cohortLocalDate.toISOString().slice(0, 10), acquisition: { channel: a.channel, normalizationVersion: 1, acquisitionLinkId: a.acquisitionLinkId } }
+      const attempt: AttemptFact = { ...a, flowVersion: a.flowVersion === 2 ? 2 : 1, knownCaptureGap: a.knownCaptureGap || a.acceptedEventCount !== stored.length, cohortLocalDate: a.cohortLocalDate.toISOString().slice(0, 10), acquisition: { channel: a.channel, normalizationVersion: 1, acquisitionLinkId: a.acquisitionLinkId } }
       const events = stored.map(e => ({ receivedAt: e.receivedAt, event: analyticsEventSchema.parse({ version: e.version, eventId: e.eventId, sequence: e.sequence, selectionRevision: e.selectionRevision, type: e.type, data: e.data }) }))
-      const p = reduceFunnelAttempt({ attempt, events, bookings, now: coverage.cutoffAt })
+      const p = reduceFunnelAttempt({ attempt, events, bookings: bookings.map(({ serviceLines, ...booking }) => ({ ...booking, serviceIds: serviceLines.length ? serviceLines.map(line => line.serviceId) : [booking.serviceId] })), now: coverage.cutoffAt })
       if (!p.mature) result.inProgress[a.entryKind]++
       if (p.mature && a.entryKind === 'complete' && p.availability.hasValidResult) {
         result.diagnostics.eligible++
@@ -127,6 +127,7 @@ export function eventDimensions(event: AnalyticsEventInput) {
   const context = parsed.success ? parsed.data : null
   return {
     serviceId: context?.serviceId ?? ('serviceId' in data ? data.serviceId : null),
+    serviceIds: context ? selectionServiceIds(context) : ('serviceIds' in data && Array.isArray(data.serviceIds) ? data.serviceIds : 'selectedServiceIds' in data && Array.isArray(data.selectedServiceIds) ? [...new Set([data.serviceId, ...data.selectedServiceIds])] : 'serviceId' in data ? [data.serviceId] : []),
     modality: context?.modality ?? null,
     professionalId: context?.professional.kind === 'person' ? context.professional.professionalId : null,
     promotionId: 'promotionId' in data ? data.promotionId : null,
@@ -135,7 +136,7 @@ export function eventDimensions(event: AnalyticsEventInput) {
 
 export async function eventDimensionsBelong(tx: Prisma.TransactionClient, businessId: string, event: AnalyticsEventInput): Promise<boolean> {
   const dims = eventDimensions(event)
-  if (dims.serviceId && !await tx.service.findFirst({ where: { businessId, id: dims.serviceId }, select: { id: true } })) return false
+  if (dims.serviceIds.length && await tx.service.count({ where: { businessId, id: { in: dims.serviceIds } } }) !== new Set(dims.serviceIds).size) return false
   if (dims.professionalId && !await tx.professional.findFirst({ where: { businessId, id: dims.professionalId }, select: { id: true } })) return false
   if (dims.promotionId && !await tx.promotion.findFirst({ where: { businessId, id: dims.promotionId }, select: { id: true } })) return false
   return true

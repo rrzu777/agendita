@@ -177,7 +177,8 @@ export function BookingWizard({ businessId, slug, business, timezone, currency, 
   }, [])
 
   function context(d: BookingData): SelectionContext | null {
-    return d.serviceId && d.serviceModality ? { serviceId: d.serviceId, modality: d.serviceModality, professional: d.professional.kind === 'person' ? { kind: 'person', professionalId: d.professional.id } : d.professional } : null
+    const serviceIds = wizardServiceIds(d)
+    return d.serviceId && d.serviceModality ? { serviceId: d.serviceId, ...(serviceIds.length > 1 ? { serviceIds } : {}), modality: d.serviceModality, professional: d.professional.kind === 'person' ? { kind: 'person', professionalId: d.professional.id } : d.professional } : null
   }
   function localDate(d: BookingData) { return d.date ? formatInTimeZone(d.date, timezone, 'yyyy-MM-dd') : null }
   // Local-only selection identity. Never includes the customer form or travels as an event.
@@ -262,6 +263,7 @@ export function BookingWizard({ businessId, slug, business, timezone, currency, 
       <section className="rounded-[2rem] border border-border/50 bg-card p-5 shadow-[var(--cream-shadow)] sm:p-8">
         {currentStep === 'service' && (
           <StepService data={data} services={services} currency={currency} selectionError={choice.kind === 'unavailable' ? 'Ningún profesional realiza todos estos servicios. Quita uno o resérvalos por separado.' : null}
+            selectionCompatible={(serviceIds, modality) => professionalChoiceForServices(professionals, serviceIds, modality).kind !== 'unavailable'}
             onInteraction={() => { hasInteracted.current = true }}
             onSelect={(selection) => {
               const siguiente = derivar({ ...data, ...selection })

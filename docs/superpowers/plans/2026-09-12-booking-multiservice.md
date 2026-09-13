@@ -94,11 +94,13 @@ Track 3 verification: first review and second/focal re-review completed with no 
 
 **Interfaces:** Backward-compatible analytics selection supports bounded distinct service IDs and flow version. Booking is one conversion; service lines feed per-service counts/revenue. Consent version is unchanged by flow version.
 
-- [ ] Add regression: two selected services → one attempt/booking conversion, two service counts, no duplicated total revenue.
-- [ ] Track add/remove and incompatible combinations with bounded dimensions; no personal fields. Preserve consent and existing activation flags.
-- [ ] Keep historical funnel comparisons version-aware when date/time become one screen.
-- [ ] Resolve exact public test-service rows read-only and prepare reversible cleanup; do not delete customer/booking history or guess test targets from a prefix alone.
-- [ ] Final independent review, full unit/integration suites, public/owner E2E against synthetic DB, build; document results and any external actions not executed.
+- [x] Add regression: two selected services → one attempt/booking conversion, two service counts, no duplicated total revenue.
+- [x] Track add/remove and incompatible combinations with bounded dimensions; no personal fields. Preserve consent and existing activation flags.
+- [x] Keep historical funnel comparisons version-aware when date/time become one screen.
+- [x] Resolve exact public test-service rows read-only and prepare reversible cleanup; do not delete customer/booking history or guess test targets from a prefix alone.
+- [x] Final independent review, full unit/integration suites, public/owner E2E against synthetic DB, build; document results and any external actions not executed.
+
+Track 4 verification: two independent review rounds closed the v1→v2 restoration and expired-receipt boundaries; no high/medium findings remain. Public synthetic E2E passed 8/8 and owner dashboard E2E passed 7/7 on desktop/mobile, including consent withdrawal, offline recovery, filters and authorization. The final serial full runs passed 458 unit files/4,123 tests (one skipped) and 78 integration files/560 tests. Typecheck, lint, diff check, a fresh 62-migration database and synthetic production build (61 static pages) passed. Read-only production catalogue evidence and the reversible cleanup proposal are in `docs/operations/2026-09-12-public-catalogue-cleanup.md`. Production currently has none of the three multiservice/category/flow-version migrations recorded, so deployment must run them before this code; no production migration, catalogue mutation, activation or deployment was performed.
 
 ## Verification commands
 

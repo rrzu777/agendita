@@ -843,11 +843,13 @@ enum AnalyticsEventType {
   funnel_started
   step_viewed
   service_considered
+  service_selection_changed
   service_selected
   professional_selected
   date_selected
   time_selected
   availability_result
+  availability_preview_result
   customer_step_completed
   promotion_result
   payment_branch_viewed
@@ -1138,6 +1140,7 @@ model BookingFunnelAttempt {
   retentionExpiresAt    DateTime
   entryKind             AnalyticsEntryKind
   definitionVersion     Int
+  flowVersion           Int @default(1)
   businessTimeZone      String @db.VarChar(100)
   cohortLocalDate       DateTime @db.Date
   channel               AnalyticsChannel
@@ -1152,6 +1155,7 @@ model BookingFunnelAttempt {
   @@unique([businessId, sessionId, id])
   @@unique([businessId, bootstrapKey])
   @@index([businessId, startedAt, id])
+  @@index([businessId, flowVersion, startedAt])
   @@index([retentionExpiresAt, id])
 }
 
