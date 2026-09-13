@@ -66,6 +66,52 @@ beforeEach(async () => {
 afterAll(async () => { await cleanup(); await prisma.$disconnect() })
 
 describe('multiservice booking public transaction', () => {
+  it.each([false, true])('rejects a mismatched quote during replay (collision fallback: %s)', async collision => {
+    await unwrap(reserve({ idempotencyKey: 'quote-replay' }))
+    const lookup = collision ? vi.spyOn(prisma.booking, 'findUnique').mockResolvedValueOnce(null) : null
+    try {
+      const retry = await reserve({ idempotencyKey: 'quote-replay', expected: { totalPrice: 19000, durationMinutes: 65, finalAmount: 4000, depositRequired: 1000 } })
+      expect(retry).toMatchObject({ ok: false, error: expect.stringContaining('cambiaron') })
+      expect(await prisma.booking.count({ where: { businessId: biz } })).toBe(1)
+    } finally { lookup?.mockRestore() }
+  })
+  it('replays the accepted stored quote even after catalogue prices and duration changed', async () => {
+    const expected = { totalPrice: 19000, durationMinutes: 65, finalAmount: 19000, depositRequired: 6000 }
+    const first = await unwrap(reserve({ idempotencyKey: 'accepted-quote', expected }))
+    await prisma.service.update({ where: { id: ids[0] }, data: { price: 16000, durationMinutes: 60 } })
+    const retry = await unwrap(reserve({ idempotencyKey: 'accepted-quote', expected }))
+    expect(retry.id).toBe(first.id)
+    expect(retry.finalAmount).toBe(19000)
+  })
+  it.each(['totalPrice', 'durationMinutes', 'finalAmount', 'depositRequired'] as const)('rejects stale reviewed %s without persisting a booking', async key => {
+    const expected = { totalPrice: 19000, durationMinutes: 65, finalAmount: 19000, depositRequired: 6000 }
+    const result = await reserve({ expected: { ...expected, [key]: expected[key] + 1 } })
+    expect(result).toMatchObject({ ok: false, error: expect.stringContaining('cambiaron') })
+    expect(await prisma.booking.count({ where: { businessId: biz } })).toBe(0)
+  })
+  it('rejects a stale discount preview and rolls back its redemption', async () => {
+    await prisma.promotion.create({ data: { businessId: biz, name: 'Free cut', code: 'STALE', triggerType: 'code', rewardType: 'free_service', rewardValue: 0, appliesToAll: true } })
+    const result = await reserve({ promotionCode: 'STALE', expected: { totalPrice: 19000, durationMinutes: 65, finalAmount: 0, depositRequired: 0 } })
+    expect(result.ok).toBe(false)
+    expect(await prisma.booking.count({ where: { businessId: biz } })).toBe(0)
+    expect(await prisma.promotionRedemption.count({ where: { businessId: biz } })).toBe(0)
+    expect(await prisma.promotion.findFirstOrThrow({ where: { businessId: biz } })).toMatchObject({ redemptionCount: 0 })
+  })
+  it('persists bounded optional customer notes without changing internal notes', async () => {
+    const result = await unwrap(reserve({ customerNotes: '  Prefiero tijeras  ' }))
+    expect(await prisma.booking.findUniqueOrThrow({ where: { id: result.id } })).toMatchObject({ customerNotes: 'Prefiero tijeras', internalNotes: null })
+    expect((await reserve({ customerNotes: 'x'.repeat(1001), startDateTime: new Date(start.getTime() + 86400000) })).ok).toBe(false)
+  })
+  it('previews bounded days using the full duration and rejects tampered ranges/tenants', async () => {
+    const { getAvailabilityPreview } = await import('@/server/actions/availability')
+    const date = start.toISOString().slice(0, 10)
+    const preview = await unwrap(getAvailabilityPreview({ businessId: biz, serviceIds: ids, from: date, days: 3, professional: { kind: 'none' }, modality: 'on_site' }))
+    expect(preview.days).toHaveLength(3)
+    expect(preview.days[0].count).toBeGreaterThan(0)
+    expect(preview.days[0].firstSlot!.end.getTime() - preview.days[0].firstSlot!.start.getTime()).toBe(65 * 60000)
+    expect((await getAvailabilityPreview({ businessId: biz, serviceIds: ids, from: date, days: 32, professional: { kind: 'none' } })).ok).toBe(false)
+    expect((await getAvailabilityPreview({ businessId: 'other', serviceIds: ids, from: date, days: 1, professional: { kind: 'none' } })).ok).toBe(false)
+  })
   it('persists one appointment with two lines and their complete amount/interval', async () => {
     const result = await unwrap(reserve())
     const booking = await prisma.booking.findUniqueOrThrow({ where: { id: result.id }, include: { serviceLines: true } })

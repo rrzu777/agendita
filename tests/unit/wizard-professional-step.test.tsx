@@ -4,6 +4,9 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import type { Service } from '@prisma/client'
 import { getVocabulary } from '@/lib/vocabulary'
 import { ANYONE_LABEL, type FunnelProfessional } from '@/lib/professionals/eligible'
+import { serializeWizardState, wizardStorageKey } from '@/lib/bookings/wizard-storage'
+import { wizardServiceFields } from '@/lib/bookings/wizard-selection'
+import type { BookingData } from '@/components/booking/wizard'
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }) }))
 vi.mock('@/server/actions/bookings', () => ({ createBooking: vi.fn() }))
@@ -19,6 +22,7 @@ vi.mock('@/server/actions/bank-transfer-public', () => ({
 }))
 vi.mock('@/server/actions/promotions', () => ({ previewPromotion: vi.fn() }))
 vi.mock('@/server/actions/availability', () => ({
+  getAvailabilityPreview: vi.fn(() => new Promise(() => {})),
   getAvailableTimeSlotsResult: vi.fn().mockResolvedValue({ ok: true, data: { slots: [], emptyReason: 'unknown' } }),
 }))
 
@@ -44,9 +48,10 @@ describe('el wizard con equipo', () => {
       root = null
     }
     document.body.replaceChildren()
+    window.history.replaceState({}, '', '/')
   })
 
-  function montar(professionals: FunnelProfessional[]) {
+  function montar(professionals: FunnelProfessional[], services = [SERVICIO]) {
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -61,7 +66,7 @@ describe('el wizard con equipo', () => {
           business={{ name: 'Barbería', addressText: null, whatsapp: null }}
           timezone="America/Santiago"
           currency="CLP"
-          services={[SERVICIO]}
+          services={services}
           professionals={professionals}
           professionalWords={getVocabulary('barber')}
           session={null}
@@ -72,14 +77,15 @@ describe('el wizard con equipo', () => {
 
   function elegirServicio() {
     const boton = Array.from(container.querySelectorAll('button')).find((b) => b.textContent?.includes('Corte'))
-    act(() => boton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    if (boton?.getAttribute('aria-pressed') !== 'true') act(() => boton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    act(() => Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Continuar')?.click())
   }
 
-  it('sin equipo el funnel tiene los seis pasos de siempre y salta a la fecha', () => {
+  it('sin equipo el funnel tiene los cinco pasos de siempre y salta a la fecha', () => {
     montar([])
-    expect(container.textContent).toContain('Paso 1 de 6')
+    expect(container.textContent).toContain('Paso 1 de 5')
     elegirServicio()
-    expect(container.textContent).toContain('Paso 2 de 6')
+    expect(container.textContent).toContain('Paso 2 de 5')
     expect(container.textContent).toContain('Fecha')
   })
 
@@ -89,10 +95,10 @@ describe('el wizard con equipo', () => {
    * un "siguiente" por índice salteaba el paso que acababa de aparecer. Este test
    * falla si alguien lo vuelve a atar al índice.
    */
-  it('con dos personas aparece el paso y la barra pasa a siete', () => {
+  it('con dos personas aparece el paso y la barra pasa a seis', () => {
     montar([persona('p-1', 'Juan'), persona('p-2', 'Sofía')])
     elegirServicio()
-    expect(container.textContent).toContain('Paso 2 de 7')
+    expect(container.textContent).toContain('Paso 2 de 6')
     expect(container.textContent).toContain('Elegí tu barbero')
     expect(container.textContent).toContain('Juan')
     expect(container.textContent).toContain('Sofía')
@@ -104,7 +110,7 @@ describe('el wizard con equipo', () => {
   it('con una sola elegible no aparece el paso', () => {
     montar([persona('p-1', 'Juan')])
     elegirServicio()
-    expect(container.textContent).toContain('Paso 2 de 6')
+    expect(container.textContent).toContain('Paso 2 de 5')
     expect(container.textContent).not.toContain('Elegí tu barbero')
   })
 
@@ -141,7 +147,7 @@ describe('el wizard con equipo', () => {
     elegirServicio()
     const cualquiera = Array.from(container.querySelectorAll('button')).find((b) => b.textContent?.includes(ANYONE_LABEL))
     act(() => cualquiera?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
-    expect(container.textContent).toContain('Paso 3 de 7')
+    expect(container.textContent).toContain('Paso 3 de 6')
 
     act(() => Array.from(container.querySelectorAll('button')).find((b) => b.textContent === 'Atrás')
       ?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
@@ -158,12 +164,32 @@ describe('el wizard con equipo', () => {
     expect(container.textContent).not.toContain(ANYONE_LABEL)
   })
 
-  it('elegir persona lleva a la fecha, ya con siete pasos', () => {
+  it('elegir persona lleva a la fecha, ya con seis pasos', () => {
     montar([persona('p-1', 'Juan'), persona('p-2', 'Sofía')])
     elegirServicio()
     const boton = Array.from(container.querySelectorAll('button')).find((b) => b.textContent?.includes('Sofía'))
     act(() => boton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
-    expect(container.textContent).toContain('Paso 3 de 7')
+    expect(container.textContent).toContain('Paso 3 de 6')
     expect(container.textContent).toContain('Fecha')
+  })
+  it.each(['p-2', 'foreign', 'p-2&professional=p-1'])('validates the professional deep link %s without removing the choice', (value) => {
+    window.history.replaceState({}, '', '/?professional=' + value)
+    montar([persona('p-1', 'Juan'), persona('p-2', 'Sofía')])
+    elegirServicio()
+    expect(container.textContent).toContain('Elegí tu barbero')
+    expect(container.querySelector('[aria-pressed="true"]')?.textContent).toContain(value === 'p-2' ? 'Sofía' : ANYONE_LABEL)
+  })
+  it('a restored explicit choice wins over the original professional link after a cart edit', () => {
+    const extra = { ...SERVICIO, id: 'nasal', name: 'Nasal' }
+    const services = [SERVICIO, extra]
+    const saved = { ...wizardServiceFields(['svc-1'], services), serviceModality: 'on_site', professional: { kind: 'person', id: 'p-2' }, professionalName: 'Sofía', date: null, timeSlot: null, customerName: '', customerPhone: '', customerEmail: '', customerNotes: '', serviceAddress: '', idempotencyKey: null } as BookingData
+    sessionStorage.setItem(wizardStorageKey('biz-1'), serializeWizardState(saved)!)
+    window.history.replaceState({}, '', '/?professional=p-1&continuar=1')
+    montar([persona('p-1', 'Juan'), persona('p-2', 'Sofía')].map(p => ({ ...p, serviceIds: ['svc-1', 'nasal'] })), services)
+    act(() => Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Atrás')?.click())
+    act(() => Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Atrás')?.click())
+    act(() => Array.from(container.querySelectorAll('button')).find(b => b.textContent?.includes('Nasal'))?.click())
+    act(() => Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Continuar')?.click())
+    expect(container.querySelector('[aria-pressed="true"]')?.textContent).toContain('Sofía')
   })
 })

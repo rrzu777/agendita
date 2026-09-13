@@ -29,12 +29,11 @@ export interface WizardStep {
  */
 export function stepsFor(professionalLabel: string | null): WizardStep[] {
   return [
-    { key: 'service', label: 'Servicio' },
+    { key: 'service', label: 'Servicios' },
     ...(professionalLabel ? [{ key: 'professional' as const, label: professionalLabel }] : []),
-    { key: 'date', label: 'Fecha' },
-    { key: 'time', label: 'Hora' },
+    { key: 'date', label: 'Fecha y hora' },
     { key: 'customer', label: 'Tus datos' },
-    { key: 'payment', label: 'Pago' },
+    { key: 'payment', label: 'Revisar reserva' },
     { key: 'confirmation', label: 'Confirmación' },
   ]
 }
@@ -82,6 +81,5 @@ export function entryStepAfterRestore(
   // justo el caso en el que el paso no está (ver `ProfessionalPick`).
   if (steps.some((s) => s.key === 'professional') && restored.professional.kind === 'none') return 'professional'
   if (restored.timeSlot) return 'customer'
-  if (restored.date) return 'time'
   return 'date'
 }

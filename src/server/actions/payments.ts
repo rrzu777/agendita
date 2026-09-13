@@ -356,7 +356,7 @@ async function _verifyAndConfirmPayment(paymentId: string, bookingId: string) {
     return { success: false, message: unconfirmedPaymentCustomerMessage(result.unconfirmedReason) }
   }
 
-  return { success: true }
+  return { success: true, amounts: { totalPrice: result.booking.totalPrice, discountAmount: result.booking.totalPrice - result.booking.finalAmount, finalAmount: result.booking.finalAmount, remainingBalance: result.booking.remainingBalance, depositRequired: result.booking.depositRequired, depositPaid: result.booking.depositPaid } }
 }
 
 export const verifyAndConfirmPayment = action(_verifyAndConfirmPayment)

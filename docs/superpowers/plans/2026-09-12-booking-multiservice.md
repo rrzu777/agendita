@@ -72,16 +72,21 @@ expect(draft.lines.reduce((sum, line) => sum + line.finalAmount, 0)).toBe(draft.
 
 ## Track 3 — Catalogue, optional professionals and preview availability
 
+UI direction (frontend-design): preserve Agendita's existing cream #fff8f1, white #ffffff, ink #332920, peach #f4dbca and muted #6d5b4e tokens. Keep Jakarta headings and Geist body; left-aligned service names that wrap rather than truncate. The characteristic element is the useful booking summary: selected lines, total time/price and abono remain visible. No new decorative palette or typography. Layout: `[category / selectable service rows] → [sticky total + continue]`; date/time: `[month + capacity-marked days] [selected-day hours with end time]`. On mobile this is one column, keyboard-accessible controls, explicit optional choice and errors that never masquerade as empty availability. Review against brief: retain the product's established warm palette (not a new generic redesign); replace auto-advance with deliberate multiselect and consolidate only the date/time screens. Confirmation is a result, not another form to complete.
+
 **Files:** `src/components/booking/{wizard,step-service,step-professional,step-date-time,step-customer,booking-summary,step-payment}.tsx`, `src/lib/bookings/{wizard-storage,wizard-steps}.ts`, public page props, `src/server/actions/availability.ts`, catalogue service category schema/form, availability and browser tests.
 
 **Interfaces:** Selected services are toggled in place, with an explicit continue action. `professional` is validated against public active professionals and the service set; invalid/stale links leave the choice available. Date/time component receives business, selection, timezone and pick; month/day responses distinguish pending/error/empty/available and discard stale results.
 
-- [ ] Test selecting/removing two services and state restoration without losing chosen professional when still eligible.
-- [ ] Group catalogue by optional owner-managed category, preserve uncategorized services and existing order; display count, total, duration and abono persistently.
-- [ ] Add optional professional preference with `professional` deep link and next-available preview; offer “Cualquiera disponible”. No simultaneous full calendars for every professional.
-- [ ] Combine date/time. Use bounded server queries for availability preview; calendar communicates actual capacity, selected state, limits and loading/errors. Show next slot and exact end time.
-- [ ] Invalidate date/time/payment identity correctly after selection changes; preserve guest and payment policy branches.
-- [ ] Review and verify responsive UI, keyboard/focus, business timezone/DST, empty/error states, query tampering and existing one-service flow; commit.
+- [x] Test selecting/removing two services and state restoration without losing chosen professional when still eligible.
+- [x] Group catalogue by optional owner-managed category, preserve uncategorized services and existing order; display count, total, duration and abono persistently.
+- [x] Add optional professional preference with `professional` deep link and next-available preview; offer “Cualquiera disponible”. No simultaneous full calendars for every professional.
+- [x] Combine date/time. Use bounded server queries for availability preview; calendar communicates actual capacity, selected state, limits and loading/errors. Show next slot and exact end time.
+- [x] Invalidate date/time/payment identity correctly after selection changes; preserve guest and payment policy branches.
+- [x] Review and verify responsive UI, keyboard/focus, business timezone/DST, empty/error states, query tampering and existing one-service flow; commit.
+
+
+Track 3 verification: first review and second/focal re-review completed with no remaining blockers. Local public browser created exactly one two-line 65-minute / $19,000 no-abono booking without email, and keyboard selection passed; evidence in `docs/superpowers/audits/2026-09-12-multiservice-local-qa.md`. Final full unit run: 456 of 457 files passed, 4,108 tests passed, one skipped, one inherited intermittent bank-transfer draft-recovery assertion; calendar stale-response/DST and catalogue follow-up tests passed (5). Typecheck, lint, diff check and synthetic production build (61 static pages) passed. Full integration passed: 78 files / 551 tests. The inherited bank-transfer file passed separately (8 tests). Final acceptance guard for changed quotes additionally passed 22 multiservice DB tests, 8 retry DB tests, 42 idempotency/professional unit tests and 21 payment/wizard unit tests; build and lint rerun successfully. Two focal independent reviews closed quote replay findings. Full suites will run again at the final track boundary. Additive category migration applied only to disposable local DB.
 
 ## Track 4 — Metrics and operational closure
 

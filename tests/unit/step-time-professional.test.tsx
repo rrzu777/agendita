@@ -130,7 +130,7 @@ describe('los horarios que pide el paso de la hora', () => {
   it('los pide a nombre de la persona elegida', async () => {
     await montar({ ...base, professional: { kind: 'person', id: 'p-1' }, professionalName: 'Juan' })
     expect(getAvailableTimeSlotsResult).toHaveBeenCalledWith({
-      businessId: 'biz-1', serviceId: 'svc-1', date: base.date,
+      businessId: 'biz-1', serviceId: 'svc-1', serviceIds: ['svc-1'], date: base.date,
       professional: { kind: 'person', id: 'p-1' }, modality: 'on_site',
     })
   })
@@ -138,7 +138,7 @@ describe('los horarios que pide el paso de la hora', () => {
   it('sin persona, los del negocio', async () => {
     await montar(base)
     expect(getAvailableTimeSlotsResult).toHaveBeenCalledWith({
-      businessId: 'biz-1', serviceId: 'svc-1', date: base.date,
+      businessId: 'biz-1', serviceId: 'svc-1', serviceIds: ['svc-1'], date: base.date,
       professional: { kind: 'none' }, modality: 'on_site',
     })
   })
@@ -151,7 +151,7 @@ describe('los horarios que pide el paso de la hora', () => {
   it('con "cualquiera" manda la elección y la modalidad', async () => {
     await montar({ ...base, professional: { kind: 'anyone' }, serviceModality: 'at_home' } as BookingData)
     expect(getAvailableTimeSlotsResult).toHaveBeenCalledWith({
-      businessId: 'biz-1', serviceId: 'svc-1', date: base.date,
+      businessId: 'biz-1', serviceId: 'svc-1', serviceIds: ['svc-1'], date: base.date,
       professional: { kind: 'anyone' }, modality: 'at_home',
     })
   })

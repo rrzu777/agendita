@@ -23,6 +23,7 @@ import { isTerminalBookingStatus } from '@/lib/bookings/status-labels'
 import { normalizeServiceSelection, resolveSelectedServices } from '@/lib/bookings/selection'
 import { resolveBookingModality } from '@/lib/services/modality'
 import { assertProfessionalOffersService } from '@/lib/professionals/ownership'
+import { computeAvailabilityPreview, type AvailabilityPreviewInput } from '@/lib/availability/preview'
 
 const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/
 
@@ -206,6 +207,12 @@ async function _getAvailableTimeSlots(input: AvailableSlotsInput) {
 
 export const getAvailableTimeSlotsResult = action(_getAvailableTimeSlots)
 export const getAvailableTimeSlots = action(async (input: AvailableSlotsInput) => (await _getAvailableTimeSlots(input)).slots)
+
+export const getAvailabilityPreview = action(async (input: AvailabilityPreviewInput) => {
+  const limit = await checkRateLimit('get-availability')
+  if (!limit.success) throw new UserError('Demasiadas solicitudes. Intenta de nuevo en unos minutos.')
+  return computeAvailabilityPreview(input)
+})
 
 async function _getAvailableSlotsForReschedule(bookingId: string, date: Date) {
   const { businessId } = await requireBusinessRole(['owner', 'admin'])

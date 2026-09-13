@@ -46,12 +46,13 @@ describe('el paso de con quién', () => {
   // Avisar que la agenda es por persona es lo que explica que los horarios cambien
   // al volver atrás y elegir a otra. Sin eso parece que la app se equivoca.
   it('avisa que los horarios dependen de a quién elija', () => {
-    expect(render()).toContain('cada persona tiene su propia agenda')
+    expect(render()).toContain('Ves los horarios de todo el equipo')
+    expect(render()).toContain('Elegir una persona es opcional')
   })
 
   it('marca cuál está elegida para quien vuelve atrás', () => {
     expect(render('barber', { kind: 'person', id: 'p-2' })).toContain('aria-pressed="true"')
-    expect(render()).not.toContain('aria-pressed="true"')
+    expect(render().indexOf('aria-pressed="true"')).toBeLessThan(render().indexOf('Juan'))
   })
 
   /**

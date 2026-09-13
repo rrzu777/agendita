@@ -6,6 +6,7 @@ import { assertSlotFreeOfConflicts } from '@/lib/availability/validation'
 import { RELEASED_STATUSES } from '@/lib/bookings/approval'
 import type { ProfessionalPick } from '@/lib/professionals/eligible'
 import { UserError } from '@/lib/actions/result'
+import { STALE_BOOKING_QUOTE_MESSAGE } from '@/lib/bookings/price-preview'
 
 /** Los tres mensajes comparten cola: el único camino de vuelta es el paso de la
  *  hora, que es donde el wizard suelta la key y empieza un intento nuevo. */
@@ -36,6 +37,7 @@ function volverAElegir(motivo: string): UserError {
 export async function resumeBookingForRetry<T extends Booking>(
   existing: T & { serviceLines?: { serviceId: string; position: number }[] },
   ctx: {
+    expected?: { totalPrice: number; durationMinutes: number; finalAmount: number; depositRequired: number }
     serviceId: string
     serviceIds?: string[]
     startDateTime: Date
@@ -85,6 +87,9 @@ export async function resumeBookingForRetry<T extends Booking>(
     await prisma.booking.update({ where: { id: existing.id }, data: { idempotencyKey: null } })
     return null
   }
+
+  const expected = ctx.expected
+  if (expected && (existing.totalPrice !== expected.totalPrice || existing.finalAmount !== expected.finalAmount || existing.depositRequired !== expected.depositRequired || (existing.endDateTime.getTime() - existing.startDateTime.getTime()) / 60000 !== expected.durationMinutes)) throw new UserError(STALE_BOOKING_QUOTE_MESSAGE)
 
   // `confirmed`, `completed` y `pending_confirmation` no esperan plata de este
   // camino: son reenvíos legítimos y se devuelven tal cual, sin tocar el hold ni

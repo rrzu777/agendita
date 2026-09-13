@@ -15,25 +15,27 @@ import { getActivePackagesForCustomer } from '@/server/actions/packages'
 export function usePackageAvailability(
   businessId: string,
   phone: string | null | undefined,
-  serviceId: string | null | undefined,
-): { remaining: number; usePackage: boolean; setUsePackage: (v: boolean) => void } {
-  const [remaining, setRemaining] = useState(0)
+  serviceId: string | string[] | null | undefined,
+) {
+  type Preview = { remaining: number; discountAmount?: number; depositRequired?: number; coveredServiceName?: string }
+  const selectionKey = JSON.stringify(serviceId)
+  const key = JSON.stringify([businessId, phone, selectionKey])
+  const [result, setResult] = useState<{ key: string; data: Preview } | null>(null)
   const [usePackage, setUsePackage] = useState(true)
 
-  /* eslint-disable react-hooks/set-state-in-effect -- reset stale remaining when
-     phone/service is incomplete, guarded by deps so it can't cascade. */
   useEffect(() => {
     if (!phone || !serviceId) {
-      setRemaining(0)
       return
     }
     let cancelled = false
-    getActivePackagesForCustomer({ businessId, phone, serviceId })
-      .then((res) => { if (!cancelled) setRemaining(res.ok ? res.data.remaining : 0) })
-      .catch(() => { if (!cancelled) setRemaining(0) })
+    getActivePackagesForCustomer({ businessId, phone, ...(Array.isArray(serviceId) ? { serviceIds: serviceId } : { serviceId }) })
+      .then((res) => { if (!cancelled) setResult({ key, data: res.ok ? res.data : { remaining: 0 } }) })
+      .catch(() => { if (!cancelled) setResult({ key, data: { remaining: 0 } }) })
     return () => { cancelled = true }
-  }, [businessId, phone, serviceId])
-  /* eslint-enable react-hooks/set-state-in-effect */
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- stable key carries the complete selection.
+  }, [key])
 
-  return { remaining, usePackage, setUsePackage }
+  const preview = result?.key === key ? result.data : { remaining: 0 }
+  // Never opt into an economic effect that has not been shown for this selection.
+  return { ...preview, usePackage: usePackage && preview.remaining > 0, setUsePackage }
 }

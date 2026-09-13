@@ -1,11 +1,17 @@
 'use client'
 
-import type { ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
 import { User, Users } from 'lucide-react'
 import { ANYONE_LABEL, type FunnelProfessional, type ProfessionalPick } from '@/lib/professionals/eligible'
+import type { BookingData } from './wizard'
+import { getAvailabilityPreview } from '@/server/actions/availability'
+import { wizardServiceIds } from '@/lib/bookings/wizard-selection'
+import { getLocalDateStr } from '@/lib/availability/timezone'
+import { formatBookingDateTime } from '@/lib/bookings/format-booking-datetime'
 
 interface StepProfessionalProps {
+  preview?: { businessId: string; timezone: string; data: BookingData }
   options: FunnelProfessional[]
   selected: ProfessionalPick
   serviceName: string
@@ -66,20 +72,40 @@ function OptionCard({
  * vuelve "la estilista" en un salón de estilistas varones. Es la misma regla que ya
  * sigue la pantalla de equipo del panel.
  */
-export function StepProfessional({ options, selected, serviceName, title, onSelect, onBack }: StepProfessionalProps) {
+export function StepProfessional({ options, selected, serviceName, title, onSelect, onBack, preview }: StepProfessionalProps) {
+  const query = preview ? JSON.stringify([preview.businessId, wizardServiceIds(preview.data), preview.data.serviceModality, preview.timezone]) : ''
+  const [result, setResult] = useState<{ query: string; value: Awaited<ReturnType<typeof getAvailabilityPreview>> } | null>(null)
+  const [retry, setRetry] = useState(0)
+  useEffect(() => {
+    if (!preview) return
+    let cancelled = false
+    getAvailabilityPreview({ businessId: preview.businessId, serviceIds: wizardServiceIds(preview.data), modality: preview.data.serviceModality, professional: { kind: 'anyone' }, from: getLocalDateStr(new Date(), preview.timezone), days: 14 })
+      .then(value => { if (!cancelled) setResult({ query, value }) })
+      .catch(() => { if (!cancelled) setResult({ query, value: { ok: false, error: 'No pudimos consultar la próxima hora.' } }) })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- query carries all preview dimensions.
+  }, [query, retry])
+  const current = result?.query === query ? result.value : null
+  function nextLabel(id?: string) {
+    if (!preview) return ''
+    if (!current) return 'Consultando próxima hora…'
+    if (!current.ok) return 'Consulta los horarios al continuar.'
+    const next = id ? current.data.professionals.find(p => p.id === id)?.firstSlot : current.data.days.find(d => d.firstSlot)?.firstSlot
+    return next ? `Próxima hora: ${formatBookingDateTime(next.start, preview.timezone)}` : 'Sin horas en los próximos 14 días. Puedes revisar fechas posteriores.'
+  }
   return (
     <div>
       <h2 className="mb-1.5 font-heading text-3xl font-semibold leading-tight tracking-tight text-primary sm:text-4xl">{title}</h2>
       <p className="mb-7 text-base text-muted-foreground">
-        {serviceName} · cada persona tiene su propia agenda, así que los horarios cambian según a quién elijas.
+        Elegir una persona es opcional. {serviceName}: todos los servicios serán con la misma persona.
       </p>
 
       <div className="space-y-3">
         <OptionCard
           icon={<Users className="size-5 sm:size-6" />}
           name={ANYONE_LABEL}
-          detail="Ves los horarios de todo el equipo y te asignamos a quien esté libre a esa hora."
-          isSelected={selected.kind === 'anyone'}
+          detail={`Ves los horarios de todo el equipo. ${nextLabel()}`}
+          isSelected={selected.kind === 'anyone' || selected.kind === 'none'}
           onClick={() => onSelect({ kind: 'anyone' })}
         />
 
@@ -88,15 +114,18 @@ export function StepProfessional({ options, selected, serviceName, title, onSele
             key={professional.id}
             icon={<User className="size-5 sm:size-6" />}
             name={professional.name}
-            detail={professional.bio}
+            detail={[professional.bio, nextLabel(professional.id)].filter(Boolean).join(' ')}
             isSelected={selected.kind === 'person' && selected.id === professional.id}
             onClick={() => onSelect({ kind: 'person', id: professional.id })}
           />
         ))}
       </div>
 
+      {current && !current.ok && <div role="alert" className="mt-4 text-sm"><p>{current.error}</p><button type="button" className="underline" onClick={() => { setResult(null); setRetry(n => n + 1) }}>Reintentar consulta</button></div>}
+
       <div className="mt-8 flex gap-3">
         <Button variant="outline" className="h-12 rounded-full px-6" onClick={onBack}>Atrás</Button>
+        <Button className="h-12 flex-1 rounded-full" onClick={() => onSelect(selected.kind === 'none' ? { kind: 'anyone' } : selected)}>Continuar</Button>
       </div>
     </div>
   )

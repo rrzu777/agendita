@@ -10,10 +10,12 @@ import { pickCacheKey } from '@/lib/professionals/eligible'
 import { LEAD_TIME_MINUTES } from '@/lib/availability/constants'
 import { formatBookingDate, formatBookingTime } from '@/lib/bookings/format-booking-datetime'
 import { Clock3, Loader2 } from 'lucide-react'
+import { wizardServiceIds } from '@/lib/bookings/wizard-selection'
 
 const LEAD_TIME_HINT = `Los horarios con menos de ${LEAD_TIME_MINUTES / 60} horas de anticipación no se muestran.`
 
 interface StepTimeProps {
+  embedded?: boolean
   businessId: string
   timezone: string
   data: BookingData
@@ -21,11 +23,12 @@ interface StepTimeProps {
   onBack: () => void
 }
 
-export function StepTime({ businessId, timezone, data, onSelect, onBack }: StepTimeProps) {
+export function StepTime({ businessId, timezone, data, onSelect, onBack, embedded = false }: StepTimeProps) {
   const analytics = usePublicAnalytics()
   const selectionRevision = analytics.revision()
   const captureIdentity = analytics.attemptIdentity()
   const pickKey = pickCacheKey(data.professional)
+  const servicesKey = JSON.stringify(wizardServiceIds(data))
   const [slots, setSlots] = useState<{ start: Date; end: Date }[]>([])
   const [selectedSlot, setSelectedSlot] = useState<{ start: Date; end: Date } | null>(null)
   const [loading, setLoading] = useState(true)
@@ -38,7 +41,7 @@ export function StepTime({ businessId, timezone, data, onSelect, onBack }: StepT
     if (!data.date || !data.serviceId) return
 
     const generation = ++generationRef.current
-    const queryContext = JSON.stringify([businessId, data.serviceId, data.date.toISOString(), pickKey, data.serviceModality])
+    const queryContext = JSON.stringify([businessId, servicesKey, data.date.toISOString(), pickKey, data.serviceModality])
     const sameBookingContext = queryContextRef.current === queryContext
     queryContextRef.current = queryContext
     const revision = analytics.revision()
@@ -66,6 +69,7 @@ export function StepTime({ businessId, timezone, data, onSelect, onBack }: StepT
     getAvailableTimeSlotsResult({
       businessId,
       serviceId: data.serviceId,
+      serviceIds: JSON.parse(servicesKey),
       date: data.date,
       professional: data.professional,
       modality: data.serviceModality,
@@ -104,7 +108,7 @@ export function StepTime({ businessId, timezone, data, onSelect, onBack }: StepT
     // elección y esto es la lectura más caliente del producto. `pickKey` la
     // representa entera —`kind` más el id—, así que no se pierde nada.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `pickKey` representa a `data.professional`
-  }, [businessId, data.date, data.serviceId, pickKey, data.serviceModality, retryKey, analytics.ready, selectionRevision, captureIdentity])
+  }, [businessId, data.date, data.serviceId, servicesKey, pickKey, data.serviceModality, retryKey, analytics.ready, selectionRevision, captureIdentity])
 
   if (loading) {
     return (
@@ -167,6 +171,7 @@ export function StepTime({ businessId, timezone, data, onSelect, onBack }: StepT
               <Clock3 className="size-4" />
               {formatBookingTime(slot.start, timezone)}
             </div>
+            <span className="mt-1 block text-xs">Hasta {formatBookingTime(slot.end, timezone)}</span>
           </button>
         ))}
       </div>
@@ -174,7 +179,7 @@ export function StepTime({ businessId, timezone, data, onSelect, onBack }: StepT
       <p className="mt-5 text-sm text-muted-foreground">{LEAD_TIME_HINT}</p>
 
       <div className="mt-8 flex gap-3">
-        <Button variant="outline" className="h-12 rounded-full px-6" onClick={onBack}>Atrás</Button>
+        {!embedded && <Button variant="outline" className="h-12 rounded-full px-6" onClick={onBack}>Atrás</Button>}
         <Button className="h-12 flex-1 rounded-full text-base font-semibold" disabled={!selectedSlot}
           onClick={() => selectedSlot && onSelect(selectedSlot)}>
           Continuar

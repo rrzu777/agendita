@@ -46,8 +46,9 @@ describe('dashboard catalog form system', () => {
   it('uses semantic form fields and densities in the service dialog', () => {
     const markup = renderService()
 
-    expect(markup.match(/data-slot="form-field"/g) ?? []).toHaveLength(7)
-    expect(markup.match(/data-density="form"/g) ?? []).toHaveLength(7)
+    expect(markup.match(/data-slot="form-field"/g) ?? []).toHaveLength(8)
+    expect(markup.match(/data-density="form"/g) ?? []).toHaveLength(8)
+    expect(markup).toContain('Categoría (opcional)')
     expect(markup).not.toContain('studio-input')
     expect(markup).toContain('data-size="form"')
     expect(markup).toMatch(/<fieldset[^>]*aria-describedby="[^"]+"/)

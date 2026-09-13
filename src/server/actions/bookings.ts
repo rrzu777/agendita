@@ -1,6 +1,7 @@
 'use server'
 
 import { z } from 'zod'
+import { STALE_BOOKING_QUOTE_MESSAGE } from '@/lib/bookings/price-preview'
 import { prisma } from '@/lib/db'
 import type { Booking, Prisma } from '@prisma/client'
 import { BookingStatus, BookingPaymentStatus, PaymentType, ServiceModality } from '@prisma/client'
@@ -135,11 +136,13 @@ const professionalPickSchema = z.discriminatedUnion('kind', [
 ])
 
 const createBookingSchema = z.object({
+  expected: z.object({ totalPrice: z.number().int().min(0).max(2147483647), durationMinutes: z.number().int().positive().max(2147483647), finalAmount: z.number().int().min(0).max(2147483647), depositRequired: z.number().int().min(0).max(2147483647) }).optional(),
   serviceId: z.string().min(1).optional(),
   serviceIds: z.array(z.string().min(1).max(128)).min(1).max(10).optional(),
   customerName: z.string().min(1).max(100),
   customerPhone: z.string().min(8).max(20),
   customerEmail: z.string().email().optional().or(z.literal('')),
+  customerNotes: z.string().trim().max(1000, 'Las notas son demasiado largas').optional(),
   customerBirthDate: z.string().optional().or(z.literal(''))
     .refine((v) => !v || isValidBirthDateString(v), 'Fecha de nacimiento inválida'),
   startDateTime: z.date(),
@@ -472,11 +475,13 @@ export async function getDashboardBookingSummary(now: Date, timezone: string) {
 }
 
 async function _createBooking(data: {
+  expected?: { totalPrice: number; durationMinutes: number; finalAmount: number; depositRequired: number }
   serviceId?: string
   serviceIds?: string[]
   customerName: string
   customerPhone: string
   customerEmail?: string
+  customerNotes?: string
   customerBirthDate?: string
   startDateTime: Date
   idempotencyKey?: string
@@ -546,6 +551,11 @@ async function _createBooking(data: {
       defaultMeetingUrl: business.defaultMeetingUrl,
     })
 
+  const expected = parsed.data.expected
+  function assertReviewedAmounts(final: number, deposit: number) {
+    if (expected && (expected.finalAmount !== final || expected.depositRequired !== deposit)) throw new UserError(STALE_BOOKING_QUOTE_MESSAGE)
+  }
+
   // Con quién. Va DESPUÉS del draft porque se valida contra la modalidad RESUELTA
   // (el servidor pisa la pedida cuando el servicio tiene una sola), y afuera de la
   // transacción porque es una lectura que el lock no protege: quien se dé de baja
@@ -611,6 +621,7 @@ async function _createBooking(data: {
   // Las dos puertas a "esta key ya se usó" —el fast path de acá abajo y el P2002
   // del catch— pasan por el mismo resume con este contexto.
   const retryCtx = {
+    expected,
     serviceId: service.id,
     serviceIds,
     startDateTime: data.startDateTime,
@@ -639,6 +650,9 @@ async function _createBooking(data: {
       if (resumida) return withPushActivation(resumida, business, sessionUser)
     }
   }
+
+  // Replays compare against their accepted snapshot; only NEW bookings use today's catalogue.
+  if (expected && (expected.totalPrice !== totalPrice || expected.durationMinutes !== (endDateTime.getTime() - data.startDateTime.getTime()) / 60000)) throw new UserError(STALE_BOOKING_QUOTE_MESSAGE)
 
   const analytics = data.analytics && typeof data.analytics === 'object' && !Array.isArray(data.analytics)
     ? data.analytics as { credential?: unknown; selectionRevision?: unknown } : null
@@ -724,6 +738,7 @@ async function _createBooking(data: {
           serviceLines: { create: lines },
           customerId: customer.id,
           professionalId,
+          customerNotes: data.customerNotes?.trim() || null,
           startDateTime: data.startDateTime,
           endDateTime,
           status,
@@ -769,10 +784,14 @@ async function _createBooking(data: {
         source: 'public_booking',
       })
 
-      if (!discount) return { booking, lockedPolicy }
+      if (!discount) {
+        assertReviewedAmounts(booking.finalAmount, booking.depositRequired)
+        return { booking, lockedPolicy }
+      }
 
       const discountedLines = allocateLineDiscount(lines, discount.discountAmount, discount.eligibleServiceIds ?? [service.id])
       const effectiveDeposit = discountedLines.reduce((sum, line) => sum + line.depositAmount, 0)
+      assertReviewedAmounts(totalPrice - discount.discountAmount, effectiveDeposit)
 
       const updated = await tx.booking.update({
         where: { id: booking.id },

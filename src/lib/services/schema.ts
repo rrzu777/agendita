@@ -19,6 +19,7 @@ export const createServiceSchema = z.object({
     .min(1, 'El nombre es requerido')
     .max(100, 'El nombre es demasiado largo'),
   description: z.string().trim().max(500, 'La descripción es demasiado larga').optional().nullable(),
+  category: z.string().trim().max(60, 'La categoría es demasiado larga').nullish().transform(v => v === '' ? null : v),
   durationMinutes: z
     .number()
     .int('Debe ser un número entero')
@@ -53,6 +54,7 @@ export const updateServiceSchema = z.object({
     .max(100, 'El nombre es demasiado largo')
     .optional(),
   description: z.string().trim().max(500, 'La descripción es demasiado larga').optional().nullable(),
+  category: z.string().trim().max(60, 'La categoría es demasiado larga').nullish().transform(v => v === '' ? null : v),
   durationMinutes: z
     .number()
     .int('Debe ser un número entero')

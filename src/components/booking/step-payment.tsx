@@ -10,6 +10,8 @@ import { BookingData } from './wizard'
 import { createBooking } from '@/server/actions/bookings'
 import { previewPromotion } from '@/server/actions/promotions'
 import { usePackageAvailability } from '@/lib/packages/use-package-availability'
+import { wizardServiceIds } from '@/lib/bookings/wizard-selection'
+import { bookingPricePreview, STALE_BOOKING_QUOTE_MESSAGE } from '@/lib/bookings/price-preview'
 import { initiatePayment, verifyAndConfirmPayment, getOnlinePaymentAvailability } from '@/server/actions/payments'
 import { getBankTransferInfo, declareBankTransfer } from '@/server/actions/bank-transfer-public'
 import { BANK_TRANSFER_METHOD } from '@/lib/bank-transfer/declared'
@@ -39,6 +41,7 @@ export interface BookingCreated {
   mode: 'paid' | 'pending'
   bookingNumber: number | null
   promo: { discountAmount: number; finalAmount: number } | null
+  amounts: { totalPrice: number; discountAmount: number; finalAmount: number; remainingBalance: number }
   where: WhereFields
   /**
    * La reserva quedó CONFIRMADA de verdad, que no es lo mismo que `mode`:
@@ -154,15 +157,16 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
   // sí tiene new-booking-form (componente long-lived). Si un refactor futuro sube
   // el promo a BookingData o agrega key/keep-alive, reintroducir ese guard.
   const [promoCode, setPromoCode] = useState('')
-  const [appliedPromo, setAppliedPromo] = useState<{ code: string; discount: number; finalAmount: number } | null>(null)
+  const [appliedPromo, setAppliedPromo] = useState<{ code: string; discount: number; finalAmount: number; depositRequired?: number } | null>(null)
   const [promoError, setPromoError] = useState<string | null>(null)
   const [promoPending, setPromoPending] = useState(false)
 
   // Paquete prepago: si la clienta tiene sesiones que cubren este servicio, se
   // ofrece usarlas (precedencia sobre promo). El servidor aplica el paquete en la
   // transacción; skipPackage:!usePackage respeta la elección de la clienta.
-  const { remaining: packageRemaining, usePackage, setUsePackage } =
-    usePackageAvailability(businessId, data.customerPhone, data.serviceId)
+  const servicesKey = JSON.stringify(wizardServiceIds(data))
+  const packagePreview = usePackageAvailability(businessId, data.customerPhone, data.serviceIds ?? data.serviceId)
+  const { remaining: packageRemaining, usePackage, setUsePackage } = packagePreview
 
   const packageCovers = packageRemaining > 0 && usePackage
 
@@ -170,21 +174,15 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
   // autoritativo; esto es solo display). Un paquete que cubre el servicio deja la
   // reserva en $0 (el servidor la marca confirmada/pagada), así que tiene precedencia
   // sobre el código. depositRequired espeja la lógica server: min(depositAmount, finalAmount).
-  const effectiveFinalPrice = packageCovers
-    ? 0
-    : appliedPromo
-      ? appliedPromo.finalAmount
-      : data.servicePrice
-  const effectiveDeposit = packageCovers
-    ? 0
-    : appliedPromo
-      ? Math.min(data.serviceDeposit, appliedPromo.finalAmount)
-      : data.serviceDeposit
+  const { finalPrice: effectiveFinalPrice, deposit: effectiveDeposit } = bookingPricePreview(
+    { price: data.servicePrice, deposit: data.serviceDeposit, serviceCount: wizardServiceIds(data).length },
+    packageCovers ? packagePreview : null, appliedPromo,
+  )
 
   // Un código 100%-off (finalAmount <= 0) o un paquete que cubre el servicio hacen que
   // la reserva no requiera pago online: el servidor la marca confirmada/pagada. Se trata
   // como path gratuito para no mostrar un botón "Pagar abono $0" ni llamar initiatePayment.
-  const promoMakesFree = (appliedPromo != null && appliedPromo.finalAmount <= 0) || packageCovers
+  const promoMakesFree = (appliedPromo != null || packageCovers) && effectiveFinalPrice <= 0
 
   const noDepositNeeded = effectiveDeposit <= 0
   const isFreeService = effectiveFinalPrice <= 0
@@ -198,7 +196,7 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
     setPromoError(null)
     /* eslint-enable react-hooks/set-state-in-effect */
     return () => { counter.current++ }
-  }, [businessId, data.serviceId, data.customerPhone, data.serviceModality])
+  }, [businessId, servicesKey, data.customerPhone, data.serviceModality])
 
   const paymentScreen = pantallaDeDatos({ noDepositNeeded, availability })
   const economicCondition = packageCovers ? 'package' : appliedPromo && appliedPromo.finalAmount <= 0 ? 'promotion_zero' : isFreeService ? 'free_service' : noDepositNeeded ? 'no_deposit' : 'deposit_required'
@@ -254,6 +252,7 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
         businessId,
         code,
         serviceId: data.serviceId,
+        serviceIds: data.serviceIds,
         phone: data.customerPhone || undefined,
       })
       if (!current()) return
@@ -265,7 +264,7 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
       }
       if (res.data.ok) {
         if (observable() && res.data.promotionId) analytics.track({ type: 'promotion_result', data: { result: 'accepted', promotionId: res.data.promotionId } })
-        setAppliedPromo({ code, discount: res.data.discount, finalAmount: res.data.finalAmount })
+        setAppliedPromo({ code, discount: res.data.discount, finalAmount: res.data.finalAmount, depositRequired: res.data.depositRequired })
         setPromoError(null)
       } else {
         if (observable()) analytics.track({ type: 'promotion_result', data: { result: 'rejected', category: res.data.category ?? 'unknown' } })
@@ -355,8 +354,8 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
           <span>
             <span className="font-semibold text-green-800">Usar mi paquete</span>
             <span className="mt-0.5 block text-green-800">
-              Tenés un paquete que cubre este servicio (quedan {packageRemaining} sesiones).
-              {usePackage && ' Se usará una sesión y no se cobrará pago.'}
+              Tu paquete cubre {packagePreview.coveredServiceName || 'un servicio'} (quedan {packageRemaining} sesiones).
+              {usePackage && (effectiveFinalPrice > 0 ? ` Se usará una sesión. Los demás servicios suman ${formatMoney(effectiveFinalPrice, currency)}.` : ' Se usará una sesión; no queda saldo por pagar.')}
             </span>
           </span>
         </label>
@@ -417,9 +416,12 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
     return {
       ...(attribution ? { analytics: attribution } : {}),
       serviceId: data.serviceId!,
+      serviceIds: data.serviceIds,
+      expected: { totalPrice: data.servicePrice, durationMinutes: data.serviceDuration, finalAmount: effectiveFinalPrice, depositRequired: effectiveDeposit },
       customerName: data.customerName,
       customerPhone: data.customerPhone,
       customerEmail: data.customerEmail,
+      customerNotes: data.customerNotes || undefined,
       customerBirthDate: data.customerBirthDate || undefined,
       startDateTime: data.timeSlot!.start,
       idempotencyKey,
@@ -517,6 +519,10 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
       cancellationPolicySnapshot: string | null
       depositRequired: number
       depositPaid: number
+      totalPrice: number
+      discountAmount: number
+      finalAmount: number
+      remainingBalance: number
       pushGrant: string | null
       pushMode: 'account' | 'guest' | null
     },
@@ -527,7 +533,8 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
       id: booking.id,
       mode,
       bookingNumber: booking.bookingNumber,
-      promo: appliedPromo ? { discountAmount: appliedPromo.discount, finalAmount: appliedPromo.finalAmount } : null,
+      promo: booking.discountAmount > 0 ? { discountAmount: booking.discountAmount, finalAmount: booking.finalAmount } : null,
+      amounts: { totalPrice: booking.totalPrice, discountAmount: booking.discountAmount, finalAmount: booking.finalAmount, remainingBalance: booking.remainingBalance },
       where: { modality: booking.modality, serviceAddress: booking.serviceAddress, meetingUrl: booking.meetingUrl },
       confirmed,
       professionalName: booking.professional?.name ?? '',
@@ -653,7 +660,7 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
       setPaso({ k: 'success' })
       // `verifyRes.data.success` es la reserva ya confirmada server-side; la fila
       // `booking` de acá se leyó antes de cobrar y todavía dice pendiente.
-      onSuccess(resultado(booking, 'paid', true))
+      onSuccess(resultado({ ...booking, ...verifyRes.data.amounts }, 'paid', true))
     } catch (err) {
       if (!bookingCreated) analytics.track({ type: 'booking_submit_result', data: { result: 'error', category: 'network' } })
       console.error('Payment error:', err)
@@ -694,11 +701,11 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
       return (
         <div className="py-12 text-center">
           <AlertCircle className="mx-auto mb-4 size-9 text-destructive" />
-          <h2 className="mb-2 font-heading text-2xl font-semibold tracking-tight text-primary">Error en el pago</h2>
+          <h2 className="mb-2 font-heading text-2xl font-semibold tracking-tight text-primary">{errorMessage === STALE_BOOKING_QUOTE_MESSAGE ? 'Revisa los cambios antes de reservar' : 'No pudimos completar la reserva'}</h2>
           <p className="mb-5 text-muted-foreground">{errorMessage || 'No se pudo procesar el pago'}</p>
           <div className="flex justify-center gap-3">
             <Button variant="outline" className="h-12 rounded-full px-6" onClick={onBack}>Atrás</Button>
-            <Button className="h-12 rounded-full px-6" onClick={() => setPaso({ k: 'review' })}>Intentar de nuevo</Button>
+            {errorMessage === STALE_BOOKING_QUOTE_MESSAGE ? <Button className="h-12 rounded-full px-6" onClick={() => window.location.reload()}>Actualizar precios y horarios</Button> : <Button className="h-12 rounded-full px-6" onClick={() => setPaso({ k: 'review' })}>Intentar de nuevo</Button>}
           </div>
         </div>
       )
@@ -765,7 +772,7 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
           timezone={timezone}
           price={data.servicePrice}
           currency={currency}
-          promotion={appliedPromo ? { discount: appliedPromo.discount, finalPrice: effectiveFinalPrice } : undefined}
+          promotion={packageCovers || appliedPromo ? { discount: data.servicePrice - effectiveFinalPrice, finalPrice: effectiveFinalPrice } : undefined}
           emphasizeFinalPrice
         />
 
@@ -814,7 +821,7 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
           timezone={timezone}
           price={data.servicePrice}
           currency={currency}
-          promotion={appliedPromo ? { discount: appliedPromo.discount, finalPrice: effectiveFinalPrice } : undefined}
+          promotion={packageCovers || appliedPromo ? { discount: data.servicePrice - effectiveFinalPrice, finalPrice: effectiveFinalPrice } : undefined}
           deposit={{ label: 'Abono requerido', amount: effectiveDeposit }}
         />
 
@@ -894,7 +901,7 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
         timezone={timezone}
         price={data.servicePrice}
         currency={currency}
-        promotion={appliedPromo ? { discount: appliedPromo.discount, finalPrice: effectiveFinalPrice } : undefined}
+        promotion={packageCovers || appliedPromo ? { discount: data.servicePrice - effectiveFinalPrice, finalPrice: effectiveFinalPrice } : undefined}
         deposit={{ label: 'Abono a pagar', amount: effectiveDeposit }}
         shape="xl"
       />
