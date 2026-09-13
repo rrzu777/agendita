@@ -228,6 +228,7 @@ test('owner can apply a custom independent filter, paginate it, close with Redis
   await expect(page).toHaveURL(new RegExp(`from=${periodFrom}&to=${periodTo}.*page=2.*channel=instagram`))
   await expect(page).not.toHaveURL(/days=28/)
   await expect(page.getByText('Cancelada: 1')).toBeVisible()
+  await page.getByText('Metodología y salud de captura', { exact: true }).click()
   const capture = page.getByRole('region', { name: 'Control de captura' })
   await expect(capture).toContainText('apagada por configuración, período abierto')
   await capture.getByRole('button', { name: 'Cerrar captura' }).click()
