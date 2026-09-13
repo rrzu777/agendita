@@ -74,6 +74,26 @@ describe('StepCustomer con sesión', () => {
     expect(html).toContain('Obligatorio')
     expect(html).toContain('Opcional')
     expect(html).not.toContain('Continuar al pago')
+    expect(html).toContain('noValidate=""')
+    expect(html).toContain('Fecha de nacimiento')
+  })
+
+  it('muestra errores propios, enfoca el primer campo y no envía datos incompletos', async () => {
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const root = createRoot(host)
+    const submit = vi.fn()
+    try {
+      await act(async () => root.render(<StepCustomer data={{ ...data, customerName: '', customerPhone: '' }} sessionEmail={null} onLoginCta={noop} onSubmit={submit} onBack={noop} />))
+      await act(async () => { host.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })) })
+      expect(submit).not.toHaveBeenCalled()
+      expect(host.querySelector('#booking-customer-name-error')?.textContent).toContain('Ingresa tu nombre')
+      expect(host.querySelector('#booking-customer-phone-error')?.textContent).toContain('Ingresa un teléfono válido')
+      expect(document.activeElement).toBe(host.querySelector('#booking-customer-name'))
+    } finally {
+      await act(async () => root.unmount())
+      host.remove()
+    }
   })
 
   it('con sesión: muestra "Reservando como" + "No soy yo" y NO el banner', () => {

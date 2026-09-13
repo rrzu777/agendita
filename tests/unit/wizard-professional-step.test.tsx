@@ -81,11 +81,12 @@ describe('el wizard con equipo', () => {
     act(() => Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Continuar')?.click())
   }
 
-  it('sin equipo el funnel tiene los cinco pasos de siempre y salta a la fecha', () => {
+  it('sin equipo mantiene las seis etapas visibles y salta a fecha con profesional auto-resuelto', () => {
     montar([])
-    expect(container.textContent).toContain('Paso 1 de 5')
+    expect(container.textContent).toContain('Paso 1 de 6')
     elegirServicio()
-    expect(container.textContent).toContain('Paso 2 de 5')
+    expect(container.textContent).toContain('Paso 3 de 6')
+    expect(container.textContent).toContain('Asignado automáticamente')
     expect(container.textContent).toContain('Fecha')
   })
 
@@ -110,7 +111,7 @@ describe('el wizard con equipo', () => {
   it('con una sola elegible no aparece el paso', () => {
     montar([persona('p-1', 'Juan')])
     elegirServicio()
-    expect(container.textContent).toContain('Paso 2 de 5')
+    expect(container.textContent).toContain('Paso 3 de 6')
     expect(container.textContent).not.toContain('Elegí tu barbero')
   })
 

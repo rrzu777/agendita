@@ -154,9 +154,9 @@ export function StepConfirmation({ data, timezone, currency, bookingId, bookingN
 
       <AccountCta sessionActive={sessionEmail !== null} customerEmail={data.customerEmail || null} className="mb-6" />
 
-      <Link href="/">
-        <Button className="h-12 rounded-full px-7 text-base font-semibold">Volver al inicio</Button>
-      </Link>
+      <Button asChild className="h-12 rounded-full px-7 text-base font-semibold">
+        <Link href="/">Volver al inicio</Link>
+      </Button>
     </div>
   )
 }

@@ -39,7 +39,7 @@ function OptionCard({
       type="button"
       onClick={onClick}
       aria-pressed={isSelected}
-      className={`group flex w-full items-center gap-4 rounded-[1.75rem] border p-4 text-left transition-all hover:-translate-y-0.5 sm:p-5 ${
+      className={`group flex min-h-16 w-full items-center gap-4 rounded-[var(--radius)] border p-4 text-left transition-colors sm:p-5 ${
         isSelected
           ? 'border-primary bg-secondary/60 shadow-[var(--cream-shadow)]'
           : 'border-border/70 bg-card hover:border-primary'

@@ -1,0 +1,2 @@
+import { Skeleton } from '@/components/ui/skeleton'
+export default function BookingLoading() { return <main className="studio-shell min-h-screen px-4 py-8"><div className="mx-auto max-w-2xl"><Skeleton className="h-16 w-full rounded-xl" /><div className="mt-6 grid grid-cols-3 gap-2 sm:grid-cols-6">{Array.from({ length: 6 }).map((_, index) => <Skeleton key={index} className="h-12 rounded-lg" />)}</div><Skeleton className="mt-6 h-96 rounded-[var(--radius)]" /></div></main> }

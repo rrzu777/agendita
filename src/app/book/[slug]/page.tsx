@@ -9,6 +9,7 @@ import { appendPublicAcquisitionSearch, getBookingFunnelUrl, publicAcquisitionSe
 import { PublicAnalytics } from '@/components/analytics/public-analytics'
 import { isPublicAnalyticsEligible } from '@/lib/analytics/public-context'
 import { getConfiguredAnalyticsConsentVersion } from '@/lib/analytics/budget'
+import type { Metadata } from 'next'
 
 // Los referralToken son UUID v4 (crypto.randomUUID). Validar la forma reduce la
 // superficie y evita lookups innecesarios con tokens arbitrarios.
@@ -17,6 +18,20 @@ const REFERRAL_TOKEN_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9
 interface BookPageProps {
   params: Promise<{ slug: string }>
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>
+}
+
+export async function generateMetadata({ params }: Pick<BookPageProps, 'params'>): Promise<Metadata> {
+  const { slug } = await params
+  const business = await getBookingBusinessBySlug(slug)
+
+  if (!business) {
+    return { title: 'Reserva tu hora — Agendita' }
+  }
+
+  return {
+    title: `${business.name} — Reserva tu hora`,
+    description: `Elige servicios, profesional y horario para reservar en ${business.name}.`,
+  }
 }
 
 export default async function BookPage({ params, searchParams }: BookPageProps) {

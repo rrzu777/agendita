@@ -64,12 +64,12 @@ export function StepDateTime({ businessId, timezone, data, onDate, onSelect, onB
     <h2 className="mb-2 font-heading text-3xl font-semibold text-primary">Elige fecha y hora</h2>
     <p className="mb-5 text-sm text-muted-foreground">Horarios de {data.professionalName || 'este negocio'}. Zona horaria: {timezone}.</p>
     <div className="mb-4 flex items-center justify-between gap-2">
-      <Button variant="outline" aria-label="Mes anterior" disabled={month <= today.slice(0, 7)} onClick={() => setMonth(format(addMonths(monthDate, -1), 'yyyy-MM'))}>‹</Button>
+      <Button variant="outline" aria-label="Mes anterior" className="size-11 p-0" disabled={month <= today.slice(0, 7)} onClick={() => setMonth(format(addMonths(monthDate, -1), 'yyyy-MM'))}>‹</Button>
       <h3 className="font-semibold capitalize">{format(monthDate, 'MMMM yyyy', { locale: es })}</h3>
-      <Button variant="outline" aria-label="Mes siguiente" disabled={!preview || nextMonth > preview.windowEnd.slice(0, 7)} onClick={() => setMonth(nextMonth)}>›</Button>
+      <Button variant="outline" aria-label="Mes siguiente" className="size-11 p-0" disabled={!preview || nextMonth > preview.windowEnd.slice(0, 7)} onClick={() => setMonth(nextMonth)}>›</Button>
     </div>
     {!current && <p role="status" className="mb-4 text-sm">Consultando días con horas disponibles…</p>}
-    {current?.error && <div role="alert" className="mb-4"><p>{current.error}</p><Button variant="outline" className="mt-2" onClick={() => { setResponse(null); setRetry(n => n + 1) }}>Reintentar</Button></div>}
+    {current?.error && <div role="alert" className="mb-4"><p>{current.error}</p><Button variant="outline" className="mt-2 min-h-11" onClick={() => { setResponse(null); setRetry(n => n + 1) }}>Reintentar</Button></div>}
     <div className="mb-4 grid grid-cols-7 gap-1" aria-label="Calendario de disponibilidad">
       {['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'].map(day => <span key={day} className="py-2 text-center text-xs text-muted-foreground">{day}</span>)}
       {Array.from({ length: (monthDate.getDay() + 6) % 7 }, (_, i) => <span key={`blank-${i}`} />)}

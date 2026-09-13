@@ -27,6 +27,7 @@ import { AccountPushLink } from '@/components/push/account-push-link'
 import { getAppUrl } from '@/lib/business/urls'
 import { isPushBookingEligible } from '@/lib/push/eligibility'
 import { InstallAppBanner } from '@/components/pwa/install-app-banner'
+import { BusinessTheme } from '@/components/theme/business-theme'
 
 interface BookingConfirmationPageProps {
   searchParams: Promise<{ bookingId?: string }>
@@ -54,6 +55,9 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
           selfServiceCutoffHours: true,
           cancellationPolicy: true,
           cancellationReminderEnabled: true,
+          brandColor: true,
+          visualStyle: true,
+          category: true,
         },
       },
       service: true, serviceLines: { select: { position: true, name: true } },
@@ -232,6 +236,7 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
   const Icon = config.icon
 
   return (
+    <BusinessTheme business={booking.business}>
     <main className="studio-shell min-h-screen px-4 py-8 md:py-12">
       <section className="mx-auto max-w-lg">
         <div className="mb-8 text-center">
@@ -436,5 +441,6 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
         {state === 'confirmed' && <InstallAppBanner canonicalOrigin={getAppUrl('')} />}
       </section>
     </main>
+    </BusinessTheme>
   )
 }

@@ -1,0 +1,2 @@
+import { Skeleton } from '@/components/ui/skeleton'
+export default function ConfirmationLoading() { return <main className="studio-shell min-h-screen px-4 py-12"><div className="mx-auto max-w-lg"><Skeleton className="mx-auto size-16 rounded-full" /><Skeleton className="mx-auto mt-6 h-9 w-64 max-w-full" /><Skeleton className="mx-auto mt-3 h-5 w-80 max-w-full" /><Skeleton className="mt-8 h-80 rounded-[var(--radius)]" /></div></main> }

@@ -8,10 +8,26 @@ import { getFunnelSession } from '@/lib/customers/session-prefill'
 import { PublicAnalytics } from '@/components/analytics/public-analytics'
 import { isPublicAnalyticsEligible } from '@/lib/analytics/public-context'
 import { getConfiguredAnalyticsConsentVersion } from '@/lib/analytics/budget'
+import type { Metadata } from 'next'
 
 // Los referralToken son UUID v4 (crypto.randomUUID). Validar la forma reduce la
 // superficie y evita lookups innecesarios con tokens arbitrarios.
 const REFERRAL_TOKEN_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+export async function generateMetadata(): Promise<Metadata> {
+  const requestHeaders = await headers()
+  const tenant = await getTenantFromRequest(requestHeaders)
+  const business = tenant ? await getBookingBusinessBySubdomain(tenant.subdomain) : null
+
+  if (!business) {
+    return { title: 'Reserva tu hora — Agendita' }
+  }
+
+  return {
+    title: `${business.name} — Reserva tu hora`,
+    description: `Elige servicios, profesional y horario para reservar en ${business.name}.`,
+  }
+}
 
 export default async function BookIndexPage({
   searchParams,

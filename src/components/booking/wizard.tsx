@@ -25,6 +25,7 @@ import { NO_PROFESSIONAL, professionalChoiceForServices, professionalFields, sam
 import { entryStepAfterRestore, stepAfter, stepBefore, stepsFor, type StepKey, type WizardStep } from '@/lib/bookings/wizard-steps'
 import { restoreWizardState, serializeWizardState, wizardStorageKey } from '@/lib/bookings/wizard-storage'
 import { getAppUrl } from '@/lib/business/urls'
+import { BookingProgress } from './booking-progress'
 
 const StepPayment = dynamic(
   () => import('./step-payment').then((module) => module.StepPayment),
@@ -155,7 +156,6 @@ export function BookingWizard({ businessId, slug, business, timezone, currency, 
   // El estado es la CLAVE del paso y no su índice justamente porque esta lista crece
   // a mitad del recorrido: un índice cambiaría de significado sin avisar.
   const { choice, steps } = derivar(data)
-  const currentIndex = Math.max(0, steps.findIndex((s) => s.key === currentStep))
 
   // Restaura el estado guardado antes del viaje a /ingresar (solo con ?continuar=1;
   // el storage se limpia siempre para no restaurar dos veces ni dejar residuo).
@@ -238,29 +238,17 @@ export function BookingWizard({ businessId, slug, business, timezone, currency, 
 
   return (
     <div className="mx-auto max-w-2xl">
-      <div className="mb-6">
-        <div className="mb-3 flex items-center gap-1.5">
-          {steps.map((step, i) => (
-            <div
-              key={step.key}
-              className={`h-1.5 flex-1 rounded-full transition-colors duration-300 ${
-                i <= currentIndex ? 'bg-primary' : 'bg-secondary'
-              }`}
-            />
-          ))}
-        </div>
-        <div className="flex items-baseline justify-between">
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Paso {currentIndex + 1} de {steps.length}</p>
-          <p className="font-heading text-base font-semibold text-primary">{steps[currentIndex]?.label}</p>
-        </div>
-      </div>
+      <BookingProgress
+        currentStep={currentStep}
+        professionalMode={choice.kind === 'ask' ? 'choice' : data.serviceId ? 'automatic' : 'pending'}
+      />
 
       {data.serviceId && currentStep !== 'service' && currentStep !== 'confirmation' && <aside aria-label="Tu selección" className="mb-5 space-y-2 px-2 text-sm">
         {(data.services ?? [{ id: data.serviceId, name: data.serviceName, price: data.servicePrice }]).map(service => <div key={service.id} className="flex justify-between gap-4"><span className="min-w-0 break-words">{service.name}</span><span className="shrink-0">{formatMoney(service.price, currency)}</span></div>)}
         <p className="font-semibold">{formatDuration(data.serviceDuration)} · Total {formatMoney(data.servicePrice, currency)} · {data.serviceDeposit ? `Abono ${formatMoney(data.serviceDeposit, currency)}` : 'Sin abono'}</p>
         {data.professionalName && <p>Te atiende: {data.professionalName}{choice.kind === 'ask' && currentStep !== 'professional' && <button type="button" className="ml-3 underline" onClick={() => setCurrentStep('professional')}>Cambiar profesional</button>}</p>}
       </aside>}
-      <section className="rounded-[2rem] border border-border/50 bg-card p-5 shadow-[var(--cream-shadow)] sm:p-8">
+      <section className="rounded-[var(--radius)] border border-border bg-card p-5 sm:p-8">
         {currentStep === 'service' && (
           <StepService data={data} services={services} currency={currency} selectionError={choice.kind === 'unavailable' ? 'Ningún profesional realiza todos estos servicios. Quita uno o resérvalos por separado.' : null}
             selectionCompatible={(serviceIds, modality) => professionalChoiceForServices(professionals, serviceIds, modality).kind !== 'unavailable'}
