@@ -51,6 +51,8 @@ describe('settings draft verifier against PostgreSQL', () => {
       addressText: '',
       city: 'Santiago',
       subdomain: 'draft-verifier',
+      brandColor: '',
+      visualStyle: 'balanced' as const,
     }
     const { verifySettingsDraftBaseline } = await import('@/server/actions/settings-draft-verifier')
 
