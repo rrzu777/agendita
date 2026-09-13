@@ -144,6 +144,7 @@ export function OnboardingWizard({
       <div className="mt-6 flex items-center justify-between">
         <Button
           variant="outline"
+          className="min-h-11 min-w-11"
           onClick={handleBack}
           disabled={currentStep === 0 || loading}
         >
@@ -152,12 +153,12 @@ export function OnboardingWizard({
         </Button>
 
         {currentStep < totalSteps - 1 ? (
-          <Button onClick={handleNext} disabled={loading}>
+          <Button onClick={handleNext} disabled={loading} className="min-h-11 min-w-11">
             Siguiente
             <ArrowRight className="ml-2 size-4" />
           </Button>
         ) : (
-          <Button onClick={handleFinish} disabled={loading || servicesCount === 0 || availabilityCount === 0} className="min-h-11">
+          <Button onClick={handleFinish} disabled={loading || servicesCount === 0 || availabilityCount === 0} className="min-h-11 min-w-11">
             {loading ? 'Finalizando...' : '¡Listo! Ir al dashboard'}
           </Button>
         )}
@@ -216,7 +217,7 @@ function StepServices({ servicesCount }: { servicesCount: number }) {
       {servicesCount === 0 ? (
         <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-4 text-sm text-amber-800">
           <p className="font-semibold mb-1">Agrega al menos un servicio</p>
-          <Button variant="outline" className="mt-2" asChild><Link href="/dashboard/services">Ir a Servicios</Link></Button>
+          <Button variant="outline" className="mt-2 min-h-11 min-w-11" asChild><Link href="/dashboard/services">Ir a Servicios</Link></Button>
         </div>
       ) : (
         <div className="rounded-lg border border-success/20 bg-success/5 p-4 text-sm text-success">
@@ -243,7 +244,7 @@ function StepSchedule({ availabilityCount }: { availabilityCount: number }) {
       {availabilityCount === 0 ? (
         <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-4 text-sm text-amber-800">
           <p className="font-semibold mb-1">Configura tus horarios</p>
-          <Button variant="outline" className="mt-2" asChild><Link href="/dashboard/availability">Ir a Horarios</Link></Button>
+          <Button variant="outline" className="mt-2 min-h-11 min-w-11" asChild><Link href="/dashboard/availability">Ir a Horarios</Link></Button>
         </div>
       ) : (
         <div className="rounded-lg border border-success/20 bg-success/5 p-4 text-sm text-success">
@@ -277,7 +278,7 @@ function StepPolicies() {
         </div>
       </div>
 
-      <Button variant="outline" asChild><Link href="/dashboard/settings">Ir a Configuración</Link></Button>
+      <Button variant="outline" className="min-h-11 min-w-11" asChild><Link href="/dashboard/settings">Ir a Configuración</Link></Button>
     </div>
   )
 }
@@ -316,7 +317,7 @@ function StepPublish({
             variant="outline"
             size="sm"
             onClick={onCopy}
-            className="shrink-0"
+            className="min-h-11 min-w-11 shrink-0"
           >
             <Copy className="size-4" />
             <span className="ml-2">{copied ? 'Copiado' : 'Copiar'}</span>
@@ -325,11 +326,11 @@ function StepPublish({
       </div>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
-        <Button variant="outline" asChild><a href={publicUrl} target="_blank" rel="noopener noreferrer">
+        <Button variant="outline" className="min-h-11 min-w-11" asChild><a href={publicUrl} target="_blank" rel="noopener noreferrer">
             <ExternalLink className="mr-2 size-4" />
             Ver perfil público
           </a></Button>
-        <Button asChild><a href={bookingUrl} target="_blank" rel="noopener noreferrer">
+        <Button className="min-h-11 min-w-11" asChild><a href={bookingUrl} target="_blank" rel="noopener noreferrer">
             <CalendarCheck2 className="mr-2 size-4" />
             Ir a la página de reserva
           </a></Button>

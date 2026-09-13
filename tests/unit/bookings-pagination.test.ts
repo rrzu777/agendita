@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { holdPrecedencePaymentWhere } from '@/lib/payments/hold-precedence'
 
 const mockRequireBusiness = vi.fn().mockResolvedValue({ businessId: 'biz-1' })
 const mockFindMany = vi.fn()
@@ -140,6 +141,12 @@ describe('getDashboardBookingSummary', () => {
     expect(mockFindMany).toHaveBeenCalledWith(expect.objectContaining({
       take: 5,
       orderBy: [{ startDateTime: 'asc' }, { id: 'asc' }],
+      where: { businessId: 'biz-1', startDateTime: { gte: new Date('2026-08-15T04:00:00Z') }, status: { notIn: ['cancelled', 'no_show', 'expired'] } },
+      select: expect.objectContaining({
+        paymentStatus: true,
+        holdExpiresAt: true,
+        payments: { where: holdPrecedencePaymentWhere, select: { provider: true, status: true, providerPaymentId: true } },
+      }),
     }))
   })
 })

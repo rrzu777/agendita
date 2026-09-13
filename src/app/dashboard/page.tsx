@@ -154,7 +154,8 @@ export default async function DashboardPage() {
                     </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-2 text-xs font-medium">
-                    <span className="rounded-md bg-muted px-2 py-1">{hasPendingDeclaredTransfer(booking) ? 'Por verificar' : bookingStatusLabel(booking.status)}</span>
+                    <span className="rounded-md bg-muted px-2 py-1">{bookingStatusLabel(displayedBookingStatus(booking, now))}</span>
+                    {hasPendingDeclaredTransfer(booking) && <span className="rounded-md bg-warning/10 px-2 py-1 text-warning">Por verificar</span>}
                     {hasPendingBalanceTransfer(booking) && <span className="rounded-md bg-warning/10 px-2 py-1 text-warning">Saldo por verificar</span>}
                   </div>
                 </li>

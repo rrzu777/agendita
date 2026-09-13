@@ -33,12 +33,18 @@ describe('Cabina del día', () => {
     // Approved payments are aggregated in paymentStatus, not this filtered relation.
     ['approved partial payment', 'deposit_paid', [], 'Pendiente de pago'],
     ['approved full payment', 'fully_paid', [], 'Pendiente de pago'],
-  ])('derives the next appointment label for %s using the shared payment contract', async (_case, paymentStatus, payments, label) => {
-    mocks.next.mockResolvedValue({ id: 'b-next', startDateTime: new Date('2026-09-15T15:30:00Z'), status: 'pending_payment', paymentStatus, holdExpiresAt: new Date('2026-09-13T14:59:59Z'), payments, customer: { name: 'Ana' }, service: { name: 'Corte' }, serviceLines: [] })
+  ])('keeps next appointment and agenda consistent for %s using the shared payment contract', async (_case, paymentStatus, payments, label) => {
+    const booking = { id: 'b-next', startDateTime: new Date('2026-09-15T15:30:00Z'), status: 'pending_payment', paymentStatus, holdExpiresAt: new Date('2026-09-13T14:59:59Z'), payments, customer: { name: 'Ana' }, service: { name: 'Corte' }, serviceLines: [] }
+    mocks.next.mockResolvedValue(booking)
+    mocks.summary.mockResolvedValue({ today: 0, total: 123, pendingTransfers: 0, upcoming: [booking] })
     const html = renderToStaticMarkup(await DashboardPage())
     const document = new DOMParser().parseFromString(html, 'text/html')
     const panel = [...document.querySelectorAll('section')].find(section => section.querySelector('h2')?.textContent === 'Próxima cita')!
     expect(panel.textContent).toContain(label)
+    const agenda = [...document.querySelectorAll('section')].find(section => section.querySelector('h2')?.textContent === 'Agenda desde hoy')!
+    expect(agenda.querySelector('li')?.textContent).toContain(label)
+    if (_case === 'declared transfer') expect(agenda.textContent).toContain('Por verificar')
+    if (label !== 'Plazo vencido') expect(agenda.textContent).not.toContain('Plazo vencido')
     if (label !== 'Plazo vencido') expect(panel.textContent).not.toContain('Plazo vencido')
     const query = mocks.next.mock.calls[0][0]
     expect(query.where.startDateTime.gte).toEqual(new Date('2026-09-13T15:00:00Z'))
@@ -46,6 +52,15 @@ describe('Cabina del día', () => {
     expect(query.select).toMatchObject({ paymentStatus: true, holdExpiresAt: true, payments: { select: { provider: true, status: true, providerPaymentId: true } } })
     expect(query.select.payments.where.OR).toContainEqual({ provider: 'mercado_pago', status: 'pending' })
     expect(query.select.payments.where.OR).toContainEqual({ provider: 'manual', status: 'pending', OR: [{ providerPaymentId: { startsWith: 'bt-declared:' } }, { providerPaymentId: { startsWith: 'bt-balance:' } }] })
+  })
+
+  it('preserves the balance-transfer indicator alongside the primary confirmed status', async () => {
+    mocks.summary.mockResolvedValue({ today: 1, total: 123, pendingTransfers: 1, upcoming: [{ id: 'b-balance', startDateTime: new Date('2026-09-13T16:00:00Z'), status: 'confirmed', paymentStatus: 'deposit_paid', holdExpiresAt: null, payments: [{ provider: 'manual', status: 'pending', providerPaymentId: 'bt-balance:b-balance' }], customer: { name: 'Ana' }, service: { name: 'Corte' }, serviceLines: [] }] })
+    const html = renderToStaticMarkup(await DashboardPage())
+    const document = new DOMParser().parseFromString(html, 'text/html')
+    const agenda = [...document.querySelectorAll('section')].find(section => section.querySelector('h2')?.textContent === 'Agenda desde hoy')!
+    expect(agenda.textContent).toContain('Confirmada')
+    expect(agenda.textContent).toContain('Saldo por verificar')
   })
 
   it('shows a truthful empty next appointment and explicit metric windows', async () => {

@@ -85,8 +85,9 @@ export function BookingDrawer({ booking, open, onOpenChange, onCloseAutoFocus, b
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side={isMobile ? 'bottom' : 'right'} onCloseAutoFocus={onCloseAutoFocus} className="h-auto max-h-[85vh] sm:max-h-full">
-        <SheetHeader>
+      {/* The sheet is portaled outside DashboardPanel: own its target sizing here. */}
+      <SheetContent side={isMobile ? 'bottom' : 'right'} onCloseAutoFocus={onCloseAutoFocus} className="h-auto max-h-[85vh] sm:max-h-full [&_button]:min-h-11 [&_button]:min-w-11 [&_a]:inline-flex [&_a]:min-h-11 [&_a]:min-w-11 [&_a]:items-center">
+        <SheetHeader className="pr-16">
           <SheetTitle>Detalle de reserva</SheetTitle>
           <SheetDescription>
             {bookingServiceName(booking)} — {formatInTimeZone(start, businessTimezone, "EEEE d 'de' MMMM, HH:mm", { locale: es })}
