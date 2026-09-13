@@ -113,6 +113,33 @@ describe('CustomerDetailPage', () => {
     expect(html).toContain('$12.000')
   })
 
+  it('keeps back, contact and new-booking targets at least 44 px without changing destinations', async () => {
+    const document = new DOMParser().parseFromString(await renderPage(), 'text/html')
+    for (const href of ['/dashboard/customers', 'https://wa.me/56912345678', '/dashboard/bookings/new?customerId=cust-1']) {
+      const action = document.querySelector(`a[href="${href}"]`)!
+      expect(action).not.toBeNull()
+      expect(action.classList.contains('min-h-11')).toBe(true)
+      expect(action.classList.contains('min-w-11')).toBe(true)
+    }
+  })
+
+  it('uses a touch-sized campaign switch with a compact track rather than stretching the track', async () => {
+    const document = new DOMParser().parseFromString(await renderPage(), 'text/html')
+    const toggle = document.querySelector('button[role="switch"]')!
+    expect(toggle.getAttribute('data-size')).toBe('touch')
+    expect(toggle.getAttribute('aria-label')).toBe('Acepta campañas')
+    expect(toggle.classList.contains('h-11')).toBe(true)
+    expect(toggle.classList.contains('w-14')).toBe(true)
+  })
+
+  it('keeps the recovery action touch-sized when the customer read fails', async () => {
+    mockGetCustomerDetail.mockRejectedValue(new Error('No se pudo cargar'))
+    const document = new DOMParser().parseFromString(await renderPage(), 'text/html')
+    const back = document.querySelector('a[href="/dashboard/customers"]')!
+    expect(back.classList.contains('min-h-11')).toBe(true)
+    expect(back.classList.contains('min-w-11')).toBe(true)
+  })
+
   it('dice quién la atendió la última vez', async () => {
     mockGetCustomerDetail.mockResolvedValue({ ...baseDetail, lastAttendedBy: 'RaulBarbero' })
 

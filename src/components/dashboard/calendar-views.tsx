@@ -79,6 +79,9 @@ interface CalendarViewsProps {
 }
 
 const HOUR_HEIGHT = 56 // px por hora
+const TARGET_SIZE = 44
+const EVENT_GAP = 4
+const MIN_LANE_WIDTH = 64 // room for a full HH:mm label beside its status icon
 const WEEK_STARTS = { locale: es, weekStartsOn: 1 } as const
 
 const statusIcons: Record<StatusIcon, typeof Clock> = {
@@ -146,15 +149,15 @@ export function CalendarViews({
       {/* Barra de control — apila hasta lg para no apretarse en tablet */}
       <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" size="icon" asChild>
+          <Button variant="outline" size="icon" className="size-11" asChild>
             <Link href={calendarHref(view, format(prev, 'yyyy-MM-dd'), selectedProfessionalId)} aria-label="Anterior">
               <ChevronLeft className="size-4" />
             </Link>
           </Button>
-          <Button variant="outline" size="sm" asChild>
+          <Button variant="outline" className="min-h-11 min-w-11" asChild>
             <Link href={calendarHref(view, todayKey, selectedProfessionalId)}>Hoy</Link>
           </Button>
-          <Button variant="outline" size="icon" asChild>
+          <Button variant="outline" size="icon" className="size-11" asChild>
             <Link href={calendarHref(view, format(next, 'yyyy-MM-dd'), selectedProfessionalId)} aria-label="Siguiente">
               <ChevronRight className="size-4" />
             </Link>
@@ -440,9 +443,9 @@ function MonthView({
             >
               <Link
                 href={calendarHref('day', key, personaId)}
-                className="absolute inset-0 rounded-lg"
+                className="flex min-h-11 min-w-11 items-center rounded-lg hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring"
                 aria-label={`Ver ${format(day, "EEEE d 'de' MMMM", { locale: es })}`}
-              />
+              >
               <span
                 className={`pointer-events-none relative text-xs font-medium ${
                   isToday
@@ -452,7 +455,8 @@ function MonthView({
               >
                 {format(day, 'd')}
               </span>
-              <div className="pointer-events-none relative mt-1 space-y-0.5 overflow-hidden">
+              </Link>
+              <div className="relative mt-1 space-y-1">
                 {dayBookings.slice(0, 3).map((b) => {
                   const appearance = bookingAppearance(b.service?.pastelColor, displayedBookingStatus(b, now))
                   const bookingLabel = `${b.customer?.name || bookingServiceName(b)} — ${localTime(b.startDateTime, timezone)}`
@@ -465,7 +469,7 @@ function MonthView({
                         onBookingClick(b)
                       }}
                       aria-label={bookingLabel}
-                      className="pointer-events-auto flex w-full items-center gap-1 rounded px-1 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1"
+                      className="flex min-h-11 min-w-11 w-full items-center gap-1 rounded px-1 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1"
                       style={{
                         backgroundColor: appearance.background,
                         color: appearance.textColor,
@@ -486,7 +490,7 @@ function MonthView({
                   )
                 })}
                 {dayBookings.length > 3 && (
-                  <span className="text-xs text-muted-foreground">+{dayBookings.length - 3} más</span>
+                  <Link href={calendarHref('day', key, personaId)} className="flex min-h-11 min-w-11 items-center text-xs text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring">+{dayBookings.length - 3} más</Link>
                 )}
               </div>
             </div>
@@ -527,7 +531,7 @@ function TimelineView({
     <div className="overflow-x-auto">
       <div className="flex min-w-fit">
         {/* Eje de horas */}
-        <div className="w-12 shrink-0 pt-8">
+        <div className="w-12 shrink-0 pt-11">
           {hours.map((h) => (
             <div key={h} style={{ height: HOUR_HEIGHT }} className="relative">
               <span className="absolute -top-2 right-1 text-xs text-muted-foreground">
@@ -544,18 +548,26 @@ function TimelineView({
             const isToday = dayKey === todayKey
             const dayBookings = bookings.filter((b) => localDayKey(new Date(b.startDateTime), timezone) === dayKey)
             const dayBlocks = timeBlocks.filter((tb) => localDayKey(new Date(tb.startDateTime), timezone) === dayKey)
-            const positioned = packLanes(dayBookings, timezone, startHour)
-            const positionedBlocks = packLanes(dayBlocks, timezone, startHour)
+            // Pack the actual hit areas together, including blocks. Enlarging only
+            // the CSS height or packing each type separately makes controls overlap.
+            // The original item timestamps are retained for every action/dialog.
+            const positioned = packLanes([
+              ...dayBookings.map(item => ({ ...item, kind: 'booking' as const })),
+              ...dayBlocks.map(item => ({ ...item, kind: 'block' as const })),
+            ], timezone, startHour, (TARGET_SIZE + 2) * 60 / HOUR_HEIGHT)
+            const laneCount = Math.max(1, ...positioned.map(p => p.lanes))
+            const dayHeight = Math.max(bodyHeight, ...positioned.map(p => (p.topMin + p.heightMin) / 60 * HOUR_HEIGHT))
 
             return (
               <div
                 key={dayKey}
                 className={`min-w-32 flex-1 border-l border-border ${days.length > 1 ? '' : 'min-w-0'}`}
+                style={{ minWidth: Math.max(128, laneCount * (MIN_LANE_WIDTH + EVENT_GAP) + 2) }}
               >
                 {/* Cabecera del día */}
                 <Link
                   href={calendarHref('day', dayKey, personaId)}
-                  className="flex h-8 items-center justify-center gap-1.5 border-b border-border text-xs font-medium hover:bg-muted/40"
+                  className="flex min-h-11 items-center justify-center gap-1.5 border-b border-border text-xs font-medium hover:bg-muted/40"
                 >
                   <span className="capitalize text-muted-foreground">{format(day, 'EEE', { locale: es })}</span>
                   <span
@@ -570,7 +582,7 @@ function TimelineView({
                 </Link>
 
                 {/* Cuerpo con líneas de hora + bloques */}
-                <div className="relative" style={{ height: bodyHeight }}>
+                <div className="relative" style={{ height: dayHeight }}>
                   {hours.map((h, idx) => (
                     <div
                       key={h}
@@ -579,21 +591,15 @@ function TimelineView({
                     />
                   ))}
 
-                  {/* Bloqueos (bandas grises) */}
-                  {positionedBlocks.map((p) => (
-                    <BlockBand key={p.item.id} p={p} onClick={() => onBlockClick(p.item)} />
-                  ))}
-
-                  {/* Reservas */}
-                  {positioned.map((p) => (
+                  {positioned.map((p) => p.item.kind === 'booking' ? (
                     <BookingBlock
-                      key={p.item.id}
-                      p={p}
+                      key={`booking-${p.item.id}`}
+                      p={{ ...p, item: p.item }}
                       timezone={timezone}
                       now={now}
-                      onClick={() => onBookingClick(p.item)}
+                      onClick={() => onBookingClick(dayBookings.find(b => b.id === p.item.id)!)}
                     />
-                  ))}
+                  ) : <BlockBand key={`block-${p.item.id}`} p={{ ...p, item: p.item }} onClick={() => onBlockClick(dayBlocks.find(b => b.id === p.item.id)!)} />)}
                 </div>
               </div>
             )
@@ -640,7 +646,7 @@ function BookingBlock({
       className="absolute overflow-hidden rounded-md border px-1.5 py-1 text-left text-xs leading-tight transition-colors hover:z-10 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1"
       style={{
         top: (p.topMin / 60) * HOUR_HEIGHT,
-        height: Math.max((p.heightMin / 60) * HOUR_HEIGHT - 2, 18),
+        height: Math.max((p.heightMin / 60) * HOUR_HEIGHT - 2, TARGET_SIZE),
         left: `calc(${leftPct}% + 2px)`,
         width: `calc(${widthPct}% - 4px)`,
         backgroundColor: appearance.background,
@@ -658,7 +664,7 @@ function BookingBlock({
       </span>
       <div className={`font-semibold ${strike}`}>{start}</div>
       <div className={`truncate ${strike}`}>{b.customer?.name || v.Client}</div>
-      {p.heightMin >= 45 && bookingServiceName(b) && <div className="truncate">{bookingServiceName(b)}</div>}
+      {p.heightMin >= (b.professional ? 75 : 60) && bookingServiceName(b) && <div className="truncate">{bookingServiceName(b)}</div>}
       {/* Quién atiende, si el chip tiene alto para una línea más. Con el filtro
           en "todo el equipo" es lo que distingue dos citas a la misma hora. */}
       {p.heightMin >= 60 && b.professional && (
@@ -683,10 +689,12 @@ function BlockBand({ p, onClick }: { p: PositionedItem<CalendarTimeBlock>; onCli
       type="button"
       onClick={onClick}
       aria-label={ariaLabel}
-      className="absolute inset-x-0.5 overflow-hidden rounded-md border border-dashed border-muted-foreground/40 bg-muted px-1.5 py-1 text-left text-xs text-muted-foreground transition-colors hover:border-muted-foreground/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1"
+      className="absolute overflow-hidden rounded-md border border-dashed border-muted-foreground/40 bg-muted px-1.5 py-1 text-left text-xs text-muted-foreground transition-colors hover:border-muted-foreground/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1"
       style={{
         top: (p.topMin / 60) * HOUR_HEIGHT,
-        height: Math.max((p.heightMin / 60) * HOUR_HEIGHT - 2, 16),
+        height: Math.max((p.heightMin / 60) * HOUR_HEIGHT - 2, TARGET_SIZE),
+        left: `calc(${p.lane * 100 / p.lanes}% + 2px)`,
+        width: `calc(${100 / p.lanes}% - 4px)`,
       }}
     >
       {texto}

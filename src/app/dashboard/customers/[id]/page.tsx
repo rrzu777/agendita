@@ -88,7 +88,7 @@ export default async function CustomerDetailPage({ params }: Props) {
           <div className="studio-card shadow-none flex min-h-[320px] flex-col items-center justify-center p-8 text-center">
             <h2 className="text-xl font-semibold text-foreground">Error al cargar</h2>
             <p className="mt-2 max-w-md text-muted-foreground">{error || 'No encontrada'}</p>
-            <Button className="mt-6" variant="outline" asChild><Link href="/dashboard/customers">
+            <Button className="mt-6 min-h-11 min-w-11" variant="outline" asChild><Link href="/dashboard/customers">
                 Volver a {v.clients}
               </Link></Button>
           </div>
@@ -124,16 +124,16 @@ export default async function CustomerDetailPage({ params }: Props) {
   return (
     <div>
       <DashboardHeader title={customer.name} subtitle={`Detalle de ${v.client}`} />
-      <div className="mx-auto max-w-[1420px] p-4 min-[1100px]:p-10">
+      <div className="mx-auto max-w-[1420px] p-4 min-[1100px]:p-10 [&_button]:min-h-11 [&_button]:min-w-11 [&_a]:min-h-11 [&_a]:min-w-11 [&_a]:inline-flex [&_input:not([aria-hidden=true])]:min-h-11 [&_select]:min-h-11">
         {/* Back + actions */}
         <div className="mb-6 flex flex-wrap items-center gap-3">
-          <Button variant="ghost" size="sm" asChild><Link href="/dashboard/customers">
+          <Button variant="ghost" className="min-h-11 min-w-11" asChild><Link href="/dashboard/customers">
               <ArrowLeft className="mr-1 size-4" />
               Volver
             </Link></Button>
           <div className="flex-1" />
           {hasWhatsapp ? (
-            <Button variant="outline" size="sm" asChild><a
+            <Button variant="outline" className="min-h-11 min-w-11" asChild><a
               href={`https://wa.me/${cleanPhone}`}
               target="_blank"
               rel="noopener noreferrer"
@@ -142,12 +142,12 @@ export default async function CustomerDetailPage({ params }: Props) {
                 WhatsApp
               </a></Button>
           ) : (
-            <Button variant="outline" size="sm" disabled title="Sin telefono valido">
+            <Button variant="outline" className="min-h-11 min-w-11" disabled title="Sin telefono valido">
               <MessageCircle className="mr-1 size-4" />
               WhatsApp
             </Button>
           )}
-          <Button variant="outline" size="sm" asChild><Link href={`/dashboard/bookings/new?customerId=${encodeURIComponent(customer.id)}`}>
+          <Button variant="outline" className="min-h-11 min-w-11" asChild><Link href={`/dashboard/bookings/new?customerId=${encodeURIComponent(customer.id)}`}>
               <Plus className="mr-1 size-4" />
               Nueva reserva
             </Link></Button>

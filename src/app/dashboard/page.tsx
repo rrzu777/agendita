@@ -13,7 +13,8 @@ import { getBusinessPublicUrl } from '@/lib/business/urls'
 import { prisma } from '@/lib/db'
 import { buildSetupChecklist } from '@/lib/dashboard/setup-checklist'
 import { formatMoney } from '@/lib/money'
-import { bookingStatusLabel } from '@/lib/bookings/status-labels'
+import { bookingStatusLabel, displayedBookingStatus } from '@/lib/bookings/status-labels'
+import { holdPrecedencePaymentWhere } from '@/lib/payments/hold-precedence'
 import { SetupChecklist } from '@/components/dashboard/setup-checklist'
 import { PendingTransfersBanner } from '@/components/dashboard/pending-transfers-banner'
 import { PendingPackageTransfersBanner } from '@/components/dashboard/pending-package-transfers-banner'
@@ -57,7 +58,11 @@ export default async function DashboardPage() {
     prisma.booking.findFirst({
       where: { businessId: business.id, startDateTime: { gte: now }, status: { in: ['confirmed', 'pending_payment', 'pending_confirmation'] } },
       orderBy: [{ startDateTime: 'asc' }, { id: 'asc' }],
-      select: { id: true, startDateTime: true, status: true, customer: { select: { name: true } }, service: { select: { name: true } }, serviceLines: { select: { position: true, name: true } } },
+      select: {
+        id: true, startDateTime: true, status: true, paymentStatus: true, holdExpiresAt: true,
+        payments: { where: holdPrecedencePaymentWhere, select: { provider: true, status: true, providerPaymentId: true } },
+        customer: { select: { name: true } }, service: { select: { name: true } }, serviceLines: { select: { position: true, name: true } },
+      },
     }),
   ])
 
@@ -100,7 +105,7 @@ export default async function DashboardPage() {
                 <div className="min-w-0 min-[721px]:border-l min-[721px]:border-border min-[721px]:pl-5">
                   <h3 className="break-words text-xl font-semibold">{nextBooking.customer?.name || v.Client}</h3>
                   <p className="mt-1 break-words text-sm text-muted-foreground">{bookingServiceName(nextBooking)}</p>
-                  <p className="mt-3 text-sm font-medium">{bookingStatusLabel(nextBooking.status)}</p>
+                  <p className="mt-3 text-sm font-medium">{bookingStatusLabel(displayedBookingStatus(nextBooking, now))}</p>
                 </div>
               </div>
             ) : (

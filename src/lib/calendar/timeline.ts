@@ -21,7 +21,7 @@ export interface PositionedItem<T> {
   item: T
   /** offset en minutos desde el inicio del eje */
   topMin: number
-  /** alto en minutos (mínimo 30 para legibilidad) */
+  /** alto de presentación en minutos (no modifica la duración del item) */
   heightMin: number
   /** columna asignada cuando hay solapes (0-based) */
   lane: number
@@ -60,6 +60,7 @@ export function packLanes<T extends TimelineItem>(
   items: T[],
   timeZone: string,
   axisStartHour: number,
+  minimumHeightMinutes = 30,
 ): PositionedItem<T>[] {
   const axisStartMin = axisStartHour * 60
 
@@ -76,7 +77,7 @@ export function packLanes<T extends TimelineItem>(
     return {
       item,
       topMin: startMin - axisStartMin,
-      heightMin: Math.max(30, endMin - startMin),
+      heightMin: Math.max(minimumHeightMinutes, endMin - startMin),
       lane: 0,
       lanes: 1,
     }
