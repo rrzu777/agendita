@@ -84,8 +84,10 @@ describe('marketing form system', () => {
         const reward = document.body.querySelector<HTMLInputElement>('#reward-value')!
         setter.call(reward, '20'); reward.dispatchEvent(new Event('input', { bubbles: true }))
       }
-      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); await Promise.resolve()
     })
+    expect(field.getAttribute('aria-invalid')).toBe('false')
+    expect(document.body.querySelector(`#${field.id}-error`)).toBeNull()
+    await act(async () => { form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); await Promise.resolve() })
     expect(action).toHaveBeenCalledTimes(1)
   })
 })

@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useState, type FormEvent } from 'react'
 
 export type ClientFieldErrors = Record<string, string>
 
@@ -36,5 +36,19 @@ export function useClientFormValidation() {
     setErrors(result.errors)
     return result.valid
   }, [])
-  return { errors, validate }
+  const revalidateField = useCallback((event: FormEvent<HTMLFormElement>) => {
+    const control = event.target
+    if (!(control instanceof HTMLInputElement || control instanceof HTMLSelectElement || control instanceof HTMLTextAreaElement) || !control.id) return
+    setErrors((current) => {
+      if (!current[control.id]) return current
+      if (!control.validity.valid) {
+        const message = constraintMessage(control)
+        return current[control.id] === message ? current : { ...current, [control.id]: message }
+      }
+      const next = { ...current }
+      delete next[control.id]
+      return next
+    })
+  }, [])
+  return { errors, validate, revalidateField }
 }

@@ -187,8 +187,8 @@ export function AdminSubscriptionControls({ businessId, timezone, plans, subscri
             <DialogDescription>{pendingAction?.description}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <DialogClose asChild><Button size="form" variant="outline" disabled={busy !== null} onClick={() => window.setTimeout(() => confirmationTriggerRef.current?.focus(), 0)}>Volver</Button></DialogClose>
-            <Button size="form" variant={pendingAction?.name === 'clear' ? 'destructive' : 'default'} disabled={busy !== null || !pendingAction} onClick={runConfirmedAction}>
+            <DialogClose asChild><Button size="form" variant="outline" className="min-h-11" disabled={busy !== null} onClick={() => window.setTimeout(() => confirmationTriggerRef.current?.focus(), 0)}>Volver</Button></DialogClose>
+            <Button size="form" variant={pendingAction?.name === 'clear' ? 'destructive' : 'default'} className="min-h-11" disabled={busy !== null || !pendingAction} onClick={runConfirmedAction}>
               {busy !== null ? 'Procesando…' : 'Confirmar acción'}
             </Button>
           </DialogFooter>

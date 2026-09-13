@@ -48,7 +48,7 @@ export function PackageCatalog({
   const [error, setError] = useState<string | null>(null)
   const [editing, setEditing] = useState<PackageProduct | null>(null)
   const [archiveCandidate, setArchiveCandidate] = useState<PackageProduct | null>(null)
-  const { errors: fieldErrors, validate } = useClientFormValidation()
+  const { errors: fieldErrors, validate, revalidateField } = useClientFormValidation()
   const archiveTriggerRef = useRef<HTMLButtonElement | null>(null)
 
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -156,7 +156,7 @@ export function PackageCatalog({
         )}
       </ul>
 
-      <form noValidate onSubmit={onSubmit} className="mt-6 grid gap-4" key={editing?.id ?? 'new'}>
+      <form noValidate onSubmit={onSubmit} onInput={revalidateField} className="mt-6 grid gap-4" key={editing?.id ?? 'new'}>
         <FormField id="package-name" label="Nombre del paquete" required error={fieldErrors['package-name']}>
           {(a11y) => <Input {...a11y} id="package-name" name="name" density="form" defaultValue={editing?.name} required />}
         </FormField>
@@ -244,8 +244,8 @@ export function PackageCatalog({
             <DialogDescription>El paquete dejará de ofrecerse para nuevas compras. Las compras existentes no se modifican.</DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <DialogClose asChild><Button size="form" variant="outline" disabled={isPending} onClick={() => window.setTimeout(() => archiveTriggerRef.current?.focus(), 0)}>Conservar paquete</Button></DialogClose>
-            <Button size="form" variant="destructive" disabled={isPending || !archiveCandidate} onClick={() => archiveCandidate && onArchive(archiveCandidate.id)}>
+            <DialogClose asChild><Button size="form" variant="outline" className="min-h-11" disabled={isPending} onClick={() => window.setTimeout(() => archiveTriggerRef.current?.focus(), 0)}>Conservar paquete</Button></DialogClose>
+            <Button size="form" variant="destructive" className="min-h-11" disabled={isPending || !archiveCandidate} onClick={() => archiveCandidate && onArchive(archiveCandidate.id)}>
               {isPending ? 'Desactivando…' : 'Desactivar paquete'}
             </Button>
           </DialogFooter>

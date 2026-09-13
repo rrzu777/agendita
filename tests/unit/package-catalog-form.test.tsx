@@ -37,8 +37,12 @@ describe('PackageCatalog form', () => {
     expect(name.getAttribute('aria-describedby')).toContain('package-name-error')
     expect(document.activeElement).toBe(name)
 
+    await act(async () => { name.value = 'Pack 5'; name.dispatchEvent(new Event('input', { bubbles: true })) })
+    expect(name.getAttribute('aria-invalid')).toBe('false')
+    expect(container.querySelector('#package-name-error')).toBeNull()
+
     await act(async () => {
-      name.value = 'Pack 5'; container.querySelector<HTMLInputElement>('#package-quantity')!.value = '5'; container.querySelector<HTMLInputElement>('#package-price')!.value = '10000'
+      container.querySelector<HTMLInputElement>('#package-quantity')!.value = '5'; container.querySelector<HTMLInputElement>('#package-price')!.value = '10000'
       form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); await Promise.resolve()
     })
     expect(mockUpsert).toHaveBeenCalledTimes(1)
@@ -57,6 +61,8 @@ describe('PackageCatalog form', () => {
     const confirm = Array.from(dialog.querySelectorAll('button')).find((item) => item.textContent === 'Desactivar paquete')!
     expect(safe.getAttribute('data-size')).toBe('form')
     expect(confirm.getAttribute('data-size')).toBe('form')
+    expect(safe.className).toContain('min-h-11')
+    expect(confirm.className).toContain('min-h-11')
     await act(async () => { safe.click(); await new Promise((resolve) => setTimeout(resolve, 0)) })
     expect(document.activeElement).toBe(trigger)
     await act(async () => root.unmount()); container.remove()

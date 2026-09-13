@@ -116,6 +116,23 @@ Evidencia del round:
 
 Revisión Shiro enfocada del round: **91/100** (claridad 19/20, jerarquía 13/15, usabilidad 15/15, consistencia 14/15, originalidad 12/15, accesibilidad 10/10, QA 8/10). La mejora proviene de recuperación inline verificable, foco y semántica booleana correcta. No queda P0/P1 ni P2 material de este review; el QA no sube porque no se repitió la matriz visual completa ni se ejecutaron proveedores reales.
 
+## Fix round 2 — cierre de hallazgos PARTIAL
+
+- La API compartida de validación ahora revalida el control que emitió `input`: si ya es válido, elimina inmediatamente su entrada, texto asociado, `aria-invalid` y referencia de `aria-describedby`; si continúa inválido, actualiza el mensaje de constraint. Todos los consumidores Task 3 del helper enlazan el evento a nivel de formulario. Los validadores propios de adquisición y período analítico también retiran su estado stale al corregir.
+- Banco limpia `serverError` y `successMessage` antes de ejecutar la validación client-side. Las pruebas cubren tanto éxito previo como error de servidor previo y comprueban que no conviven con el nuevo error de campo.
+- Las seis acciones de los tres diálogos mantienen `size="form"` y añaden `min-h-11` scoped, por lo que `md:h-10` no reduce el target por debajo de 44 px.
+
+TDD y gates del round:
+
+- RED: 13 fallos esperados expusieron recuperación stale y ausencia de `min-h-11`; una prueba adicional reprodujo el error de período que persistía después de corregir las fechas.
+- `npx vitest --run <10 focused files>` — 10 archivos / 63 pruebas pasaron.
+- `npm run lint` — pass.
+- `npm run typecheck` — pass.
+- `git diff --check` — pass.
+- Impeccable no se volvió a ejecutar, respetando el techo de una corrida.
+
+Medición browser enfocada: Chromium headed, servidor Next 16 local con Postgres aislado, pagos manuales y Mercado Pago sandbox. A 390, 834 y 1440 px, tras estabilizar la animación, cada uno de los seis controles (`Volver` + confirmar en suspensión, configuración de facturación y desactivación de paquete) reportó `height: 44px` y `min-height: 44px`. Solo se abrieron/cancelaron diálogos; ninguna acción se confirmó. Para alcanzar el diálogo de paquete se creó un producto temporal directamente en la base aislada y se eliminó al finalizar. El navegador y servidor se cerraron y sus artefactos temporales se retiraron.
+
 ## Remaining risks
 
 - CI and independent review have not run because this task explicitly forbids opening/pushing a PR.

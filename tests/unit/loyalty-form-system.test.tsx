@@ -101,6 +101,9 @@ describe('loyalty form system', () => {
     expect(mockUpsertRule).not.toHaveBeenCalled()
     expect(priority.getAttribute('aria-describedby')).toContain('birthday-priority-error')
     expect(document.activeElement).toBe(priority)
+    await act(async () => { priority.value = '100'; priority.dispatchEvent(new Event('input', { bubbles: true })) })
+    expect(priority.getAttribute('aria-invalid')).toBe('false')
+    expect(container.querySelector('#birthday-priority-error')).toBeNull()
   })
 
   it('uses labeled form controls in the redemption editor', async () => {
@@ -123,7 +126,10 @@ describe('loyalty form system', () => {
     expect(mockUpsertConfig).not.toHaveBeenCalled()
     expect(name.getAttribute('aria-describedby')).toContain('programName-error')
     expect(document.activeElement).toBe(name)
-    await act(async () => { name.value = 'Club'; form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); await Promise.resolve() })
+    await act(async () => { name.value = 'Club'; name.dispatchEvent(new Event('input', { bubbles: true })) })
+    expect(name.getAttribute('aria-invalid')).toBe('false')
+    expect(container.querySelector('#programName-error')).toBeNull()
+    await act(async () => { form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); await Promise.resolve() })
     expect(mockUpsertConfig).toHaveBeenCalledTimes(1)
   })
 
@@ -138,9 +144,11 @@ describe('loyalty form system', () => {
     expect(name.getAttribute('aria-describedby')).toContain('redemption-name-error')
     expect(document.activeElement).toBe(name)
     await act(async () => {
-      name.value = 'Corte gratis'; container.querySelector<HTMLInputElement>('#redemption-pointsCost')!.value = '10'
-      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); await Promise.resolve()
+      name.value = 'Corte gratis'; name.dispatchEvent(new Event('input', { bubbles: true }))
     })
+    expect(name.getAttribute('aria-invalid')).toBe('false')
+    expect(container.querySelector('#redemption-name-error')).toBeNull()
+    await act(async () => { container.querySelector<HTMLInputElement>('#redemption-pointsCost')!.value = '10'; form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); await Promise.resolve() })
     expect(mockUpsertRedemption).toHaveBeenCalledTimes(1)
   })
 })

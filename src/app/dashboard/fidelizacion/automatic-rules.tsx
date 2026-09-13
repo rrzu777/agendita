@@ -145,7 +145,7 @@ function RuleCard({
   const [isPending, start] = useTransition()
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
-  const { errors: fieldErrors, validate } = useClientFormValidation()
+  const { errors: fieldErrors, validate, revalidateField } = useClientFormValidation()
   const cond = rule ? conditionsOf(rule) : {}
   const [rewardKind, setRewardKind] = useState<'points' | 'grant'>(
     rule ? rewardKindOf(rule) : 'points',
@@ -206,6 +206,7 @@ function RuleCard({
   return (
     <form
       noValidate
+      onInput={revalidateField}
       onSubmit={onSubmit}
       className="rounded-lg border border-border p-4"
       key={rule?.id ?? `new-${kind}`}

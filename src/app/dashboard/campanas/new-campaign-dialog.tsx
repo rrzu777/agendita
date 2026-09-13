@@ -71,7 +71,7 @@ export function NewCampaignDialog({
   const [message, setMessage] = useState(() => defaultMessageForSegment('birthday_month'))
   // Mientras el usuario no toque el mensaje, cambiar de segmento re-siembra el default.
   const [messageTouched, setMessageTouched] = useState(false)
-  const { errors: fieldErrors, validate } = useClientFormValidation()
+  const { errors: fieldErrors, validate, revalidateField } = useClientFormValidation()
 
   function selectSegment(next: CampaignSegmentType) {
     setSegment(next)
@@ -137,6 +137,7 @@ export function NewCampaignDialog({
 
         <form
           noValidate
+          onInput={revalidateField}
           onSubmit={(e) => {
             e.preventDefault()
             handleSubmit(e.currentTarget)

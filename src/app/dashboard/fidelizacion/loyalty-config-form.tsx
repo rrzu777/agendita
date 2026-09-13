@@ -15,7 +15,7 @@ export function LoyaltyConfigForm({ config }: { config: LoyaltyConfig | null }) 
   const [isPending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
-  const { errors: fieldErrors, validate } = useClientFormValidation()
+  const { errors: fieldErrors, validate, revalidateField } = useClientFormValidation()
 
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -48,7 +48,7 @@ export function LoyaltyConfigForm({ config }: { config: LoyaltyConfig | null }) 
   }
 
   return (
-    <form noValidate onSubmit={onSubmit} className="studio-card space-y-5 p-6">
+    <form noValidate onSubmit={onSubmit} onInput={revalidateField} className="studio-card space-y-5 p-6">
       <label className="flex items-center gap-2">
         <input type="checkbox" name="isActive" defaultChecked={config?.isActive ?? false} className="size-4" />
         <span className="text-sm font-semibold text-foreground">Programa activo</span>

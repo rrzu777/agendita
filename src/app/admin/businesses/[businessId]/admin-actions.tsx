@@ -208,9 +208,10 @@ export function AdminActions({ businessId, businessName, currentStatus }: AdminA
             <DialogDescription>{confirmation?.description}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <DialogClose asChild><Button size="form" variant="outline" disabled={loading !== null} onClick={() => window.setTimeout(() => confirmationTriggerRef.current?.focus(), 0)}>Volver</Button></DialogClose>
+            <DialogClose asChild><Button size="form" variant="outline" className="min-h-11" disabled={loading !== null} onClick={() => window.setTimeout(() => confirmationTriggerRef.current?.focus(), 0)}>Volver</Button></DialogClose>
             <Button
               size="form"
+              className="min-h-11"
               variant={confirmation?.tone === 'destructive' ? 'destructive' : 'default'}
               disabled={loading !== null || !confirmation}
               onClick={() => confirmation?.run().finally(() => setConfirmation(null))}

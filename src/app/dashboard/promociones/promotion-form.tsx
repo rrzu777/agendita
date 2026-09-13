@@ -128,7 +128,7 @@ export function PromotionForm({
   const [error, setError] = useState<string | null>(null)
   const [form, setForm] = useState<FormState>(() => (editing ? stateFromPromo(editing) : emptyState()))
   const [sample, setSample] = useState('20000')
-  const { errors: fieldErrors, validate } = useClientFormValidation()
+  const { errors: fieldErrors, validate, revalidateField } = useClientFormValidation()
 
   const codeLocked = editing !== null && editing.redemptionCount > 0
 
@@ -219,6 +219,7 @@ export function PromotionForm({
 
         <form
           noValidate
+          onInput={revalidateField}
           onSubmit={(e) => {
             e.preventDefault()
             handleSubmit(e.currentTarget)

@@ -302,11 +302,31 @@ describe('BankTransferForm unsaved bank details', () => {
     expect(holder.getAttribute('aria-describedby')).toContain('bt-holder-error')
     expect(document.activeElement).toBe(holder)
 
+    await setInput(container, 'Titular', 'María')
+    expect(holder.getAttribute('aria-invalid')).toBe('false')
+    expect(holder.getAttribute('aria-describedby') ?? '').not.toContain('bt-holder-error')
+    expect(container.querySelector('#bt-holder-error')).toBeNull()
+
     for (const [label, value] of [['Titular', 'María'], ['RUT', '12.345.678-9'], ['Banco', 'Banco'], ['Tipo de cuenta', 'vista'], ['Número de cuenta', '123']] as const) {
       await setInput(container, label, value)
     }
     await act(async () => { form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); await Promise.resolve() })
     expect(mockSaveBankTransferAccount).toHaveBeenCalledTimes(1)
     expect(holder.getAttribute('aria-invalid')).toBe('false')
+  })
+
+  it.each([
+    ['success', { ok: true, data: bankFormValues }, 'Datos guardados.'],
+    ['server error', { ok: false, error: 'Cuenta rechazada' }, 'Cuenta rechazada'],
+  ] as const)('clears stale %s feedback before showing a new client error', async (_kind, result, staleText) => {
+    mockSaveBankTransferAccount.mockResolvedValue(result)
+    await act(async () => root.render(<UnsavedChangesProvider><BankTransferForm businessId="biz-1" account={account} requireProof={false} proofUploadAvailable={false} /></UnsavedChangesProvider>))
+    const form = container.querySelector('form')!
+    await act(async () => { form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); await Promise.resolve() })
+    expect(container.textContent).toContain(staleText)
+    await setInput(container, 'Titular', '')
+    await act(async () => form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
+    expect(container.textContent).not.toContain(staleText)
+    expect(container.querySelector('#bt-holder-error')?.textContent).toBe('Completa este campo.')
   })
 })

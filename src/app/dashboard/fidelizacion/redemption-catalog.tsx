@@ -51,7 +51,7 @@ export function RedemptionCatalog({
   const [isPending, start] = useTransition()
   const [error, setError] = useState<string | null>(null)
   const [editing, setEditing] = useState<RedemptionOption | null>(null)
-  const { errors: fieldErrors, validate } = useClientFormValidation()
+  const { errors: fieldErrors, validate, revalidateField } = useClientFormValidation()
 
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -147,7 +147,7 @@ export function RedemptionCatalog({
         )}
       </ul>
 
-      <form noValidate onSubmit={onSubmit} className="mt-4 grid gap-4" key={editing?.id ?? 'new'}>
+      <form noValidate onSubmit={onSubmit} onInput={revalidateField} className="mt-4 grid gap-4" key={editing?.id ?? 'new'}>
         <FormField id="redemption-name" label="Nombre de la recompensa" required error={fieldErrors['redemption-name']}>
           {(a11y) => (
             <Input {...a11y} id="redemption-name" name="name" density="form" defaultValue={editing?.name} required />

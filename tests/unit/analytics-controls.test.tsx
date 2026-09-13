@@ -37,6 +37,9 @@ describe('actual analytics management controls', () => {
     expect(input.getAttribute('aria-describedby')).toContain(`${input.id}-error`)
     expect(input.getAttribute('aria-invalid')).toBe('true')
     expect(document.activeElement).toBe(input)
+    await act(async () => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Corregida'); input.dispatchEvent(new Event('input', { bubbles: true })) })
+    expect(input.getAttribute('aria-invalid')).toBe('false')
+    expect(host.querySelector(`#${input.id}-error`)).toBeNull()
   })
 
   it('edits the current label with cancel, pending and failure states without changing props or pagination', async () => {
@@ -87,6 +90,11 @@ describe('actual analytics management controls', () => {
     await act(async () => { form.dispatchEvent(submit) })
     expect(submit.defaultPrevented).toBe(true)
     expect(host.querySelector('[role="alert"]')?.textContent).toContain('La fecha final debe ser posterior')
+    host.querySelector<HTMLInputElement>('[name="from"]')!.value = '2026-08-28'
+    const to = host.querySelector<HTMLInputElement>('[name="to"]')!
+    await act(async () => { to.value = '2026-08-29'; to.dispatchEvent(new Event('input', { bubbles: true })) })
+    expect(host.querySelector('[role="alert"]')).toBeNull()
+    expect(to.getAttribute('aria-invalid')).toBe('false')
   })
   it('submits custom dates and exactly one grain, clearing incompatible fields and resetting page', async () => {
     await act(async () => root.render(<AnalyticsControls report={{ ...report, filter: { ...report.filter, channel: 'instagram' }, services: { ...report.services, page: 4 } }} periodMode={{ days: 28 }} />))

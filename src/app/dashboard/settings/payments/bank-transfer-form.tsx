@@ -46,7 +46,7 @@ export function BankTransferForm({
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
-  const { errors, validate } = useClientFormValidation()
+  const { errors, validate, revalidateField } = useClientFormValidation()
   const submitInFlight = useRef(false)
   const initialValues = useMemo(() => toBankTransferFormValues(account), [account])
   const [baseline, setBaseline] = useState(initialValues)
@@ -84,12 +84,12 @@ export function BankTransferForm({
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
+    setServerError(null)
+    setSuccessMessage(null)
     if (!validate(e.currentTarget)) return
     if (submitInFlight.current) return
     submitInFlight.current = true
     setIsSubmitting(true)
-    setServerError(null)
-    setSuccessMessage(null)
     const submittedValues = { ...form }
     try {
       const res = await saveBankTransferAccount({
@@ -141,7 +141,7 @@ export function BankTransferForm({
   const noVerifyLimit = form.verifyHours.trim() === ''
 
   return (
-    <form noValidate onSubmit={handleSubmit} className="space-y-4">
+    <form noValidate onSubmit={handleSubmit} onInput={revalidateField} className="space-y-4">
       {draft.recovery === 'restored' && (
         <p role="status" className="rounded-lg border border-border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
           Recuperamos un borrador local para que puedas continuar editando.
