@@ -85,5 +85,6 @@ describe('BusinessDetailPage (admin)', () => {
     expect(html).toContain('data-slot="table"')
     expect(html).toContain('Salud de la cuenta')
     expect(html).toContain('Sin alertas operativas')
+    expect(html).toMatch(/class="[^"]*min-h-11[^"]*"[^>]*>Volver a negocios/)
   })
 })

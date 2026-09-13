@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch'
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { FormField } from '@/components/ui/form-field'
+import { useClientFormValidation } from '@/lib/forms/client-validation'
 
 type SubscriptionSummary = {
   status: string
@@ -53,6 +54,8 @@ export function AdminSubscriptionControls({ businessId, timezone, plans, subscri
   const [complimentaryReason, setComplimentaryReason] = useState('')
   const [clearReason, setClearReason] = useState('')
   const confirmationTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const configureTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const { errors: fieldErrors, validate, revalidateField } = useClientFormValidation()
   const [pendingAction, setPendingAction] = useState<{
     name: string
     description: string
@@ -85,6 +88,21 @@ export function AdminSubscriptionControls({ businessId, timezone, plans, subscri
     }
   }
 
+  function submitBillingConfiguration(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setMessage(null)
+    if (!validate(event.currentTarget) || !configureTriggerRef.current) return
+    execute(
+      configureTriggerRef.current,
+      'configure',
+      `¿Guardar esta configuración${billingEnabled ? ' y habilitar el rollout' : ''}? Esto no realizará un cobro.`,
+      async () => {
+        const { adminConfigureBilling } = await import('@/server/actions/admin')
+        return adminConfigureBilling(businessId, { planId, trialDays: Number(trialDays), graceDays: Number(graceDays), billingEnabled })
+      },
+    )
+  }
+
   if (!subscription) {
     return <p className="text-sm text-muted-foreground">Este negocio no tiene una suscripción configurable.</p>
   }
@@ -104,7 +122,7 @@ export function AdminSubscriptionControls({ businessId, timezone, plans, subscri
         <div><dt className="text-muted-foreground">Última reconciliación</dt><dd>{dateLabel(subscription.lastReconciledAt, timezone)}</dd></div>
       </dl>
 
-      <div className="space-y-3 border-t pt-4">
+      <form noValidate onSubmit={submitBillingConfiguration} onInput={revalidateField} className="space-y-3 border-t pt-4">
         <p className="font-semibold">Configuración de facturación</p>
         <div className="space-y-2">
           <Label htmlFor="billing-plan">Plan mensual <span aria-hidden="true">*</span></Label>
@@ -114,24 +132,16 @@ export function AdminSubscriptionControls({ businessId, timezone, plans, subscri
           </Select>
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <FormField id="billing-trial" label="Días de prueba" required>
-            {(a11y) => <Input {...a11y} id="billing-trial" className="min-h-11" type="number" min={0} max={365} value={trialDays} onChange={(event) => setTrialDays(event.target.value)} required />}
+          <FormField id="billing-trial" label="Días de prueba" required error={fieldErrors['billing-trial']}>
+            {(a11y) => <Input {...a11y} id="billing-trial" className="min-h-11" type="number" min={0} max={365} step={1} value={trialDays} onChange={(event) => setTrialDays(event.target.value)} required />}
           </FormField>
-          <FormField id="billing-grace" label="Días de gracia" required>
-            {(a11y) => <Input {...a11y} id="billing-grace" className="min-h-11" type="number" min={0} max={30} value={graceDays} onChange={(event) => setGraceDays(event.target.value)} required />}
+          <FormField id="billing-grace" label="Días de gracia" required error={fieldErrors['billing-grace']}>
+            {(a11y) => <Input {...a11y} id="billing-grace" className="min-h-11" type="number" min={0} max={30} step={1} value={graceDays} onChange={(event) => setGraceDays(event.target.value)} required />}
           </FormField>
         </div>
         <Label className="min-h-11 justify-between rounded-md border p-3">Habilitar rollout de cobro <Switch checked={billingEnabled} onCheckedChange={setBillingEnabled} /></Label>
-        <Button className="min-h-11 w-full" disabled={busy !== null || !planId} onClick={(event) => execute(
-          event.currentTarget,
-          'configure',
-          `¿Guardar esta configuración${billingEnabled ? ' y habilitar el rollout' : ''}? Esto no realizará un cobro.`,
-          async () => {
-            const { adminConfigureBilling } = await import('@/server/actions/admin')
-            return adminConfigureBilling(businessId, { planId, trialDays: Number(trialDays), graceDays: Number(graceDays), billingEnabled })
-          },
-        )}>{busy === 'configure' ? 'Guardando…' : 'Guardar configuración'}</Button>
-      </div>
+        <Button ref={configureTriggerRef} type="submit" className="min-h-11 w-full" disabled={busy !== null || !planId}>{busy === 'configure' ? 'Guardando…' : 'Guardar configuración'}</Button>
+      </form>
 
       <div className="space-y-3 border-t pt-4">
         <p className="font-semibold">Exención family & friends</p>

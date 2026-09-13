@@ -86,7 +86,7 @@ Evidence: live browser interaction, seven screenshots, responsive matrix and cha
 | Interaction and usability | 14/15 | Route nav, aliases, safe dialogs, explicit states and recovery are predictable; campaign/billing side effects remain guarded. |
 | Visual consistency | 14/15 | Canonical page headers, panels, KPI strip, tokens and copy are consistent across owner/admin shells. |
 | Brand originality | 12/15 | The operational ledger/rail and tenant style system are product-specific; admin intentionally stays quieter than tenant pages. |
-| Accessibility and readability | 9/10 | H1/title, semantic labels, 44 px changed actions, visible focus, Escape/focus restoration and reduced motion verified. |
+| Accessibility and readability | 9/10 | H1/title, semantic labels, the measured dialog and admin navigation actions at 44 px, visible focus, Escape/focus restoration and reduced motion verified. |
 | Fit and finish / QA | 9/10 | Three widths, two tenant styles, empty/data states and production build verified; exhaustive slow/error browser permutations remain open. |
 
 Final score: **89/100**. No P0/P1 remains. Material P2 fixed during review: desktop finance KPI compression, admin mobile overflow, form ownership and modal focus restoration. Remaining P2: analytics is necessarily information-dense on a 390 px screen; a future task may add saved/custom dashboard views, but removing evidence would weaken product truth.
@@ -137,5 +137,23 @@ Medición browser enfocada: Chromium headed, servidor Next 16 local con Postgres
 
 - CI and independent review have not run because this task explicitly forbids opening/pushing a PR.
 - Provider-backed Mercado Pago states were not exercised; only safe sandbox rendering was checked.
-- Admin zero state is covered by automated rendering, while the live browser used a populated isolated account.
+- Admin zero state is covered by automated rendering and a focused live-browser target measurement against a temporary empty database clone; the full original route matrix used a populated isolated account.
 - The repository retains 89 Premium strict findings outside or inherited within this track; none is new, but they remain cleanup debt.
+
+## Fix round 3 — validación peligrosa y navegación admin
+
+- La configuración de facturación administrativa es ahora un formulario con validación cliente antes de abrir la confirmación. `trialDays` y `graceDays` mantienen sus valores, constraints `required`/`min`/`max`/`step`, error asociado, `aria-invalid`/`aria-describedby`, foco en el primer inválido y recuperación inmediata. Un valor vacío ya no puede convertirse silenciosamente mediante `Number('')`; ninguna action ni diálogo se alcanza hasta que ambos campos sean válidos. El contrato del server action y el flujo existente de pending/fallo se conservaron.
+- El rango personalizado de métricas identifica el campo culpable (`from` o `to`), evita navegación, lo enfoca al enviar, asocia solo ese control al mensaje y retira o recalcula el error en `input` antes de un nuevo submit.
+- Los enlaces nuevos `Volver a negocios` y `Volver al dashboard` tienen `min-h-11` scoped; no se cambió globalmente `Button`.
+
+TDD y gates del round:
+
+- RED: 7 fallos esperados en 4 archivos expusieron la coerción de vacío/falta de constraints antes de confirmación, el foco/asociación incompletos del rango y la ausencia de `min-h-11` en ambos enlaces.
+- GREEN ampliado: `npx vitest --run tests/unit/admin-action-controls.test.tsx tests/unit/analytics-controls.test.tsx tests/unit/admin-businesses-page.test.tsx tests/unit/admin-business-detail-page.test.tsx tests/unit/client-form-validation.test.ts` — 5 archivos / 24 pruebas pasaron. Incluye vacío, fracción, fuera de rango, preservación, recuperación antes de reenvío y pending/fallo con actions mockeadas.
+- `npm run lint` — pass.
+- `npm run typecheck` — pass.
+- `git diff --check` — pass.
+- Build no se repitió: el cambio no afecta configuración ni comportamiento de build y el build aislado del cierre anterior permanece como evidencia del track.
+- Premium e Impeccable no se volvieron a ejecutar; este round no introduce primitives/estilos globales y se respetó el techo explícito de una sola corrida de Impeccable.
+
+Medición browser enfocada: Chromium headed contra Next 16 local. `Volver a negocios` midió `height: 44px` y `min-height: 44px` a 390, 834 y 1440 px sobre la base aislada original. `Volver al dashboard` midió lo mismo en los tres anchos sobre una base temporal clonada y vaciada exclusivamente para mostrar el zero-state; esa base se eliminó y se confirmó su ausencia al terminar. No se confirmó ninguna acción administrativa ni se mutó la base original. Navegador, servidor y artefactos Playwright temporales quedaron cerrados/retirados.

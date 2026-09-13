@@ -28,6 +28,15 @@ function deferred<T>() {
   return { promise, reject }
 }
 
+const subscription = { status: 'active', environment: 'sandbox', trialDays: 30, trialEndAt: null, graceDays: 7, pastDueAt: null, graceEndsAt: null, complimentaryUntil: null, complimentaryReason: null, nextBillingAt: null, cancelAtPeriodEnd: false, currentPeriodEnd: '2026-10-01T00:00:00Z', lastReconciledAt: null, billingEnabled: false, planId: 'plan-1' }
+
+async function setInputValue(input: HTMLInputElement, value: string) {
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value)
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+}
+
 describe('administrative confirmation controls', () => {
   let container: HTMLDivElement
   let root: Root
@@ -65,7 +74,6 @@ describe('administrative confirmation controls', () => {
   })
 
   it('opens/cancels configuration and exposes pending failure recovery with 44px actions', async () => {
-    const subscription = { status: 'active', environment: 'sandbox', trialDays: 30, trialEndAt: null, graceDays: 7, pastDueAt: null, graceEndsAt: null, complimentaryUntil: null, complimentaryReason: null, nextBillingAt: null, cancelAtPeriodEnd: false, currentPeriodEnd: '2026-10-01T00:00:00Z', lastReconciledAt: null, billingEnabled: false, planId: 'plan-1' }
     await act(async () => root.render(<AdminSubscriptionControls businessId="biz-1" timezone="America/Santiago" plans={[{ id: 'plan-1', name: 'Base', priceMonthly: 10000 }]} subscription={subscription} />))
     const trigger = button(container, 'Guardar configuración')
     await act(async () => trigger.click())
@@ -88,5 +96,28 @@ describe('administrative confirmation controls', () => {
     expect(mockConfigure).toHaveBeenCalledWith('biz-1', { planId: 'plan-1', trialDays: 30, graceDays: 7, billingEnabled: false })
     expect(container.textContent).toContain('Proveedor no disponible')
     expect(mockRefresh).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['empty trial', '#billing-trial', ''],
+    ['fractional trial', '#billing-trial', '1.5'],
+    ['trial above maximum', '#billing-trial', '366'],
+    ['grace above maximum', '#billing-grace', '31'],
+  ])('blocks %s before opening confirmation and recovers while preserving the value', async (_case, selector, invalidValue) => {
+    await act(async () => root.render(<AdminSubscriptionControls businessId="biz-1" timezone="America/Santiago" plans={[{ id: 'plan-1', name: 'Base', priceMonthly: 10000 }]} subscription={subscription} />))
+    const input = container.querySelector<HTMLInputElement>(selector)!
+    await setInputValue(input, invalidValue)
+    await act(async () => button(container, 'Guardar configuración').click())
+
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
+    expect(mockConfigure).not.toHaveBeenCalled()
+    expect(input.value).toBe(invalidValue)
+    expect(input.getAttribute('aria-invalid')).toBe('true')
+    expect(input.getAttribute('aria-describedby')).toContain(`${input.id}-error`)
+    expect(document.activeElement).toBe(input)
+
+    await setInputValue(input, '10')
+    expect(input.getAttribute('aria-invalid')).toBe('false')
+    expect(container.querySelector(`#${input.id}-error`)).toBeNull()
   })
 })

@@ -59,7 +59,7 @@ export default async function AdminPage() {
 
         {businesses.length === 0 ? (
           <DashboardPanel title="Aún no hay negocios registrados" description="La lista aparecerá cuando exista una cuenta en la plataforma.">
-            <Link href="/dashboard" className={buttonVariants({ variant: 'outline', size: 'form' })}>Volver al dashboard</Link>
+            <Link href="/dashboard" className={buttonVariants({ variant: 'outline', size: 'form', className: 'min-h-11' })}>Volver al dashboard</Link>
           </DashboardPanel>
         ) : <>
 

@@ -55,6 +55,7 @@ describe('AdminPage', () => {
 
     expect(html).toContain('Aún no hay negocios registrados')
     expect(html).toContain('Volver al dashboard')
+    expect(html).toMatch(/class="[^"]*min-h-11[^"]*"[^>]*>Volver al dashboard/)
     expect(html).not.toContain('data-slot="table"')
   })
 })

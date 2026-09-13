@@ -90,8 +90,35 @@ describe('actual analytics management controls', () => {
     await act(async () => { form.dispatchEvent(submit) })
     expect(submit.defaultPrevented).toBe(true)
     expect(host.querySelector('[role="alert"]')?.textContent).toContain('La fecha final debe ser posterior')
+    expect(document.activeElement).toBe(host.querySelector<HTMLInputElement>('[name="to"]'))
+    expect(host.querySelector<HTMLInputElement>('[name="from"]')!.getAttribute('aria-invalid')).toBe('false')
+    expect(host.querySelector<HTMLInputElement>('[name="to"]')!.getAttribute('aria-describedby')).toBe('analytics-period-error')
     host.querySelector<HTMLInputElement>('[name="from"]')!.value = '2026-08-28'
     const to = host.querySelector<HTMLInputElement>('[name="to"]')!
+    await act(async () => { to.value = '2026-08-29'; to.dispatchEvent(new Event('input', { bubbles: true })) })
+    expect(host.querySelector('[role="alert"]')).toBeNull()
+    expect(to.getAttribute('aria-invalid')).toBe('false')
+  })
+  it('focuses the first missing custom date and moves the associated error as dates are corrected', async () => {
+    await act(async () => root.render(<AnalyticsControls report={report} periodMode={{ days: null }} />))
+    const form = host.querySelector('form')!
+    const from = host.querySelector<HTMLInputElement>('[name="from"]')!
+    const to = host.querySelector<HTMLInputElement>('[name="to"]')!
+    from.value = ''
+    to.value = ''
+
+    const submit = new Event('submit', { bubbles: true, cancelable: true })
+    await act(async () => { form.dispatchEvent(submit) })
+    expect(submit.defaultPrevented).toBe(true)
+    expect(document.activeElement).toBe(from)
+    expect(from.getAttribute('aria-describedby')).toBe('analytics-period-error')
+    expect(to.getAttribute('aria-invalid')).toBe('false')
+
+    await act(async () => { from.value = '2026-08-28'; from.dispatchEvent(new Event('input', { bubbles: true })) })
+    expect(from.getAttribute('aria-invalid')).toBe('false')
+    expect(to.getAttribute('aria-describedby')).toBe('analytics-period-error')
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain('fecha final')
+
     await act(async () => { to.value = '2026-08-29'; to.dispatchEvent(new Event('input', { bubbles: true })) })
     expect(host.querySelector('[role="alert"]')).toBeNull()
     expect(to.getAttribute('aria-invalid')).toBe('false')

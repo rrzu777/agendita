@@ -84,7 +84,7 @@ export default async function BusinessDetailPage({ params }: BusinessDetailPageP
       <DashboardPageHeader
         title={business.name}
         subtitle={`Cuenta creada el ${business.createdAt.toLocaleDateString('es-CL', { timeZone: tz })}`}
-        action={<Link href="/admin" className={buttonVariants({ variant: 'outline', size: 'form' })}>Volver a negocios</Link>}
+        action={<Link href="/admin" className={buttonVariants({ variant: 'outline', size: 'form', className: 'min-h-11' })}>Volver a negocios</Link>}
       />
       <div className="space-y-6 px-4 py-6 min-[1100px]:px-10">
         <div className="flex flex-wrap gap-2">
