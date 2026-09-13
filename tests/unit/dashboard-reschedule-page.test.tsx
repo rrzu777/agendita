@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { UnsavedChangesProvider } from '@/components/dashboard/unsaved-changes-provider'
 
 const { mockGetUser, mockBookingFindFirst, mockRedirect, mockNotFound } = vi.hoisted(() => ({
   mockGetUser: vi.fn(),
@@ -64,7 +65,7 @@ describe('/dashboard/bookings/[id]/reschedule', () => {
     mockBookingFindFirst.mockResolvedValue(
       reservaViva({ holdExpiresAt: new Date(Date.now() - 60_000) }),
     )
-    const html = renderToStaticMarkup(await ReschedulePage({ params }))
+    const html = renderToStaticMarkup(<UnsavedChangesProvider>{await ReschedulePage({ params })}</UnsavedChangesProvider>)
     expect(html.toLowerCase()).toContain('venció el plazo')
     // Nombra la salida: un "no" sin salida es indistinguible de una app rota.
     expect(html).toContain('Revivir')
@@ -79,13 +80,13 @@ describe('/dashboard/bookings/[id]/reschedule', () => {
     mockBookingFindFirst.mockResolvedValue(
       reservaViva({ paymentStatus: 'deposit_paid', holdExpiresAt: new Date(Date.now() - 60_000) }),
     )
-    const html = renderToStaticMarkup(await ReschedulePage({ params }))
+    const html = renderToStaticMarkup(<UnsavedChangesProvider>{await ReschedulePage({ params })}</UnsavedChangesProvider>)
     expect(html).toContain('reschedule-form')
   })
 
   it('reserva viva → formulario', async () => {
     mockBookingFindFirst.mockResolvedValue(reservaViva())
-    const html = renderToStaticMarkup(await ReschedulePage({ params }))
+    const html = renderToStaticMarkup(<UnsavedChangesProvider>{await ReschedulePage({ params })}</UnsavedChangesProvider>)
     expect(html).toContain('reschedule-form')
   })
 })

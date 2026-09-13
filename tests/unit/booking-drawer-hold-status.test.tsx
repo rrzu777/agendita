@@ -7,9 +7,7 @@ import type { CalendarBooking } from '@/components/dashboard/booking-card'
 vi.mock('@/components/dashboard/booking-contact-buttons', () => ({
   BookingContactButtons: () => null,
 }))
-vi.mock('@/components/dashboard/cancel-booking-button', () => ({
-  CancelBookingButton: () => <button type="button">Cancelar</button>,
-}))
+vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }))
 vi.mock('@/components/dashboard/customer-photos', () => ({
   CustomerPhotos: () => null,
 }))
@@ -82,6 +80,19 @@ describe('BookingDrawer — holds vencidos', () => {
     act(() => root?.unmount())
     root = null
     document.body.replaceChildren()
+  })
+
+  it.each(['confirmed', 'pending_confirmation'] as const)('owns the 44px target boundary inside the portal for %s actions', (status) => {
+    const rendered = renderDrawer({ ...booking, status, holdExpiresAt: null })
+    root = rendered.root
+    const sheet = document.querySelector('[data-slot="sheet-content"]')!
+    expect(rendered.container.contains(sheet)).toBe(false)
+    expect(sheet.classList.contains('[&_button]:min-h-11')).toBe(true)
+    expect(sheet.classList.contains('[&_button]:min-w-11')).toBe(true)
+    expect(sheet.classList.contains('[&_a]:min-h-11')).toBe(true)
+    expect(sheet.classList.contains('[&_a]:min-w-11')).toBe(true)
+    expect(sheet.textContent).toContain(status === 'confirmed' ? 'Reprogramar' : 'Aceptar')
+    expect(sheet.textContent).toContain('Cerrar')
   })
 
   it('prioriza el pago MP en vuelo y mantiene bloqueada la reprogramación', () => {

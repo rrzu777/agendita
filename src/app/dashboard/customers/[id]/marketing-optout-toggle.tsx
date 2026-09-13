@@ -46,6 +46,7 @@ export function MarketingOptOutToggle({
           </p>
         </div>
         <Switch
+          size="touch"
           checked={marketingOptOutAt === null}
           onCheckedChange={handleChange}
           disabled={pending}

@@ -42,6 +42,24 @@
 
 ## Component behavior
 
+Owner page structure is shared through `DashboardPageHeader` (also exported as
+`DashboardHeader` for existing routes), `DashboardPanel`, and `KpiStrip` under
+`src/components/dashboard`. Headers keep one page heading, a useful description,
+and the primary action together; contextual back links use `GuardedLink`.
+Panels name their region with a visible heading. KPI values use a definition list,
+always include their window/definition, and distinguish unavailable data from zero.
+`DashboardCatalogueNav` derives its route links and role access from the canonical
+dashboard navigation registry; it does not maintain a second list of permissions.
+The weekly calendar uses a chronological agenda on phones and the existing time
+grid on larger viewports. Both open the same booking drawer, which returns focus
+to the appointment that opened it.
+
+Calendar hit areas are packed together across appointments and time blocks at a
+minimum 44 px height; dense columns scroll internally without covering another
+action or modifying appointment duration. Customer detail uses the canonical
+`Switch` size `touch`: a compact track inside a 56×44 px target. Existing switch
+sizes remain unchanged for other workflows.
+
 | Component | Default | Hover | Focus | Active | Disabled | Busy | Error |
 |---|---|---|---|---|---|---|---|
 | Button | semantic token | tonal shift | visible ring | slight tonal press | no pointer action | stable width + status | inline/page alert |

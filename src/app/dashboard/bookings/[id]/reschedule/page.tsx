@@ -13,6 +13,8 @@ interface ReschedulePageProps {
   params: Promise<{ id: string }>
 }
 
+export const metadata = { title: 'Reprogramar reserva — Agendita' }
+
 export default async function ReschedulePage({ params }: ReschedulePageProps) {
   const userData = await getCurrentUserWithBusiness()
   const { id } = await params
@@ -50,8 +52,8 @@ export default async function ReschedulePage({ params }: ReschedulePageProps) {
 
   return (
     <div>
-      <DashboardHeader title="Reprogramar reserva" subtitle={subtitle} />
-      <div className="p-5 md:p-10">
+      <DashboardHeader back={{ href: '/dashboard/bookings', label: 'Volver a reservas' }} title="Reprogramar reserva" subtitle={subtitle} />
+      <div className="mx-auto max-w-[1420px] p-4 min-[1100px]:p-10">
         {blockedRescheduleReason ? (
           // Sin PageMessage: ése trae su propio <main> y el layout del panel ya
           // tiene uno.

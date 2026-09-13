@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import type { ServiceModality } from '@prisma/client'
+import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -97,9 +98,9 @@ export function ServiceTable({ services: initialServices, currency }: { currency
   return (
     <div>
       {error && (
-        <div className="mb-4 flex items-center justify-between gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+        <div role="alert" className="mb-4 flex items-center justify-between gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
           <span>{error}</span>
-          <button type="button" onClick={() => setError(null)} className="shrink-0 text-destructive/70 hover:text-destructive">
+          <button type="button" aria-label="Cerrar error" onClick={() => setError(null)} className="flex size-11 shrink-0 items-center justify-center rounded-lg text-destructive hover:bg-destructive/10 focus-visible:ring-2 focus-visible:ring-ring">
             <X className="size-4" />
           </button>
         </div>
@@ -107,13 +108,13 @@ export function ServiceTable({ services: initialServices, currency }: { currency
 
       <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <h2 className="text-2xl font-heading font-semibold tracking-tight text-primary">Catálogo de servicios</h2>
+          <h2 className="text-2xl font-heading font-semibold tracking-tight text-foreground">Catálogo de servicios</h2>
           <p className="text-sm text-muted-foreground">
             {activeCount} activo{activeCount !== 1 ? 's' : ''}
             {inactiveCount > 0 && `, ${inactiveCount} inactivo${inactiveCount !== 1 ? 's' : ''}`}
           </p>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-3">
           {inactiveCount > 0 && (
             <div className="flex items-center gap-2">
               <Switch
@@ -137,7 +138,7 @@ export function ServiceTable({ services: initialServices, currency }: { currency
       )}
 
       {displayedServices.length === 0 ? (
-        <div className="studio-card overflow-hidden py-12 text-center">
+        <div className="studio-card shadow-none overflow-hidden py-12 text-center">
           <div className="flex flex-col items-center gap-4">
             <div className="flex size-14 items-center justify-center rounded-full bg-muted">
               <svg className="size-7 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -145,7 +146,7 @@ export function ServiceTable({ services: initialServices, currency }: { currency
               </svg>
             </div>
             <div>
-              <p className="mb-1 text-base font-semibold text-primary">
+              <p className="mb-1 text-base font-semibold text-foreground">
                 {showInactive ? 'No tienes servicios todavía' : 'No hay servicios activos'}
               </p>
               <p className="text-sm text-muted-foreground">
@@ -162,7 +163,7 @@ export function ServiceTable({ services: initialServices, currency }: { currency
         </div>
       ) : (
         <>
-          <div className="hidden lg:block studio-card overflow-hidden">
+          <div className="hidden lg:block studio-card shadow-none overflow-hidden">
             <Table fixed className={TABLE_MIN_WIDTH}>
               <TableHeader>
                 <TableRow className="bg-muted/50">
@@ -187,7 +188,7 @@ export function ServiceTable({ services: initialServices, currency }: { currency
                             type="button"
                             onClick={() => handleMoveUp(fullIndex)}
                             disabled={reorderDisabled || fullIndex === 0}
-                            className="text-muted-foreground hover:text-primary disabled:opacity-30 disabled:cursor-not-allowed"
+                            className="inline-flex size-11 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-30 disabled:cursor-not-allowed"
                             aria-label="Mover arriba"
                           >
                             <ChevronUp className="size-3.5" />
@@ -197,7 +198,7 @@ export function ServiceTable({ services: initialServices, currency }: { currency
                             type="button"
                             onClick={() => handleMoveDown(fullIndex)}
                             disabled={reorderDisabled || fullIndex === sorted.length - 1}
-                            className="text-muted-foreground hover:text-primary disabled:opacity-30 disabled:cursor-not-allowed"
+                            className="inline-flex size-11 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-30 disabled:cursor-not-allowed"
                             aria-label="Mover abajo"
                           >
                             <ChevronDown className="size-3.5" />
@@ -205,7 +206,7 @@ export function ServiceTable({ services: initialServices, currency }: { currency
                         </div>
                       </TableCell>
                       <TruncatedCell
-                        className="font-semibold text-primary"
+                        className="font-semibold text-foreground"
                         primary={service.name}
                         secondary={service.description}
                       />
@@ -252,6 +253,9 @@ export function ServiceTable({ services: initialServices, currency }: { currency
                   { label: 'Abono', value: formatMoney(service.depositAmount, currency) },
                 ]}
                 actions={
+                  <>
+                  <Button variant="ghost" size="icon" className="size-11" aria-label="Mover arriba" disabled={reorderDisabled || sorted.findIndex(s => s.id === service.id) === 0} onClick={() => handleMoveUp(sorted.findIndex(s => s.id === service.id))}><ChevronUp className="size-4" /></Button>
+                  <Button variant="ghost" size="icon" className="size-11" aria-label="Mover abajo" disabled={reorderDisabled || sorted.findIndex(s => s.id === service.id) === sorted.length - 1} onClick={() => handleMoveDown(sorted.findIndex(s => s.id === service.id))}><ChevronDown className="size-4" /></Button>
                   <ServiceRowActions
                     service={service}
                     loading={loadingRow === service.id}
@@ -260,6 +264,7 @@ export function ServiceTable({ services: initialServices, currency }: { currency
                     onSuccess={refresh}
                     currency={currency}
                   />
+                  </>
                 }
                 className={!service.isActive ? 'opacity-60' : ''}
               />

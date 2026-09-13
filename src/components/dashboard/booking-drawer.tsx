@@ -47,6 +47,7 @@ interface BookingDrawerProps {
   booking: CalendarBooking
   open: boolean
   onOpenChange: (open: boolean) => void
+  onCloseAutoFocus?: (event: Event) => void
   businessCurrency: string
   businessTimezone: string
   businessAddress: string | null
@@ -62,7 +63,7 @@ interface BookingDrawerProps {
   now: Date
 }
 
-export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, businessTimezone, businessAddress, photoUploadEnabled, hasTeam, now }: BookingDrawerProps) {
+export function BookingDrawer({ booking, open, onOpenChange, onCloseAutoFocus, businessCurrency, businessTimezone, businessAddress, photoUploadEnabled, hasTeam, now }: BookingDrawerProps) {
   const vocabulary = useVocabulary()
   const isMobile = useIsMobile()
 
@@ -84,15 +85,16 @@ export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, b
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side={isMobile ? 'bottom' : 'right'} className="h-auto max-h-[85vh] sm:max-h-full">
-        <SheetHeader>
+      {/* The sheet is portaled outside DashboardPanel: own its target sizing here. */}
+      <SheetContent side={isMobile ? 'bottom' : 'right'} onCloseAutoFocus={onCloseAutoFocus} className="h-auto max-h-[85vh] sm:max-h-full [&_button]:min-h-11 [&_button]:min-w-11 [&_a]:inline-flex [&_a]:min-h-11 [&_a]:min-w-11 [&_a]:items-center">
+        <SheetHeader className="pr-16">
           <SheetTitle>Detalle de reserva</SheetTitle>
           <SheetDescription>
             {bookingServiceName(booking)} — {formatInTimeZone(start, businessTimezone, "EEEE d 'de' MMMM, HH:mm", { locale: es })}
           </SheetDescription>
         </SheetHeader>
 
-        <div className="space-y-4 overflow-y-auto p-4">
+        <div className="min-h-0 space-y-5 overflow-y-auto p-4">
           <div className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground">Estado</span>
             {/* Status DERIVADO, no el crudo: el bloque de cobro de más abajo
@@ -185,7 +187,7 @@ export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, b
               montarse. Sólo monta con el drawer abierto (el SheetContent de
               Radix desmonta al cerrar), así que la agenda no carga fotos de
               todas las citas del mes para mostrar una. */}
-          <div className="space-y-2 rounded-xl border border-border/60 p-3">
+          <div className="space-y-3 border-t border-border pt-4">
             <h4 className="text-sm font-semibold">Fotos de esta cita</h4>
             <CustomerPhotos
               target={{ bookingId: booking.id }}
@@ -194,7 +196,7 @@ export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, b
             />
           </div>
 
-          <div className="space-y-2 rounded-xl border border-border/60 p-3">
+          <div className="space-y-3 border-t border-border pt-4">
             <h4 className="text-sm font-semibold">Contactar cliente</h4>
             <BookingContactButtons
               booking={{
@@ -221,7 +223,7 @@ export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, b
           </div>
 
           {isManualPaymentAllowed(booking, now) ? (
-            <div className="space-y-3 rounded-xl border border-border/60 p-3">
+            <div className="space-y-3 border-t border-border pt-4">
               <h4 className="text-sm font-semibold">Registrar pago</h4>
               <ManualPaymentDialog
                 bookings={[booking]}
@@ -239,14 +241,14 @@ export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, b
             // el badge sigue diciendo "Pendiente de pago" y esta línea es lo
             // único que avisa. Además nombra la SALIDA (esperar al cron y usar
             // Revivir), que un badge no puede explicar.
-            <div className="space-y-1 rounded-xl border border-border/60 p-3">
+            <div className="space-y-2 border-t border-border pt-4">
               <h4 className="text-sm font-semibold">Registrar pago</h4>
               <p className="text-sm text-muted-foreground">{paymentBlockedReason}</p>
             </div>
           ) : null}
 
           {booking.status === 'pending_confirmation' && (
-            <div className="space-y-2 rounded-xl border border-border/60 p-3">
+            <div className="space-y-3 border-t border-border pt-4">
               <h4 className="text-sm font-semibold">Solicitud por responder</h4>
               <div className="flex gap-2">
                 <BookingStatusButton
@@ -267,16 +269,14 @@ export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, b
           )}
 
           {(booking.status === 'confirmed' || booking.status === 'pending_payment') && (
-            <div className="space-y-2 rounded-xl border border-border/60 p-3">
+            <div className="space-y-3 border-t border-border pt-4">
               <h4 className="text-sm font-semibold">Acciones</h4>
               <div className="flex gap-2">
                 {!blockedRescheduleReason && (
-                  <Link href={`/dashboard/bookings/${booking.id}/reschedule`} className="flex-1">
-                    <Button type="button" variant="outline" size="sm" className="w-full">
+                  <Button type="button" variant="outline" size="sm" className="w-full" asChild><Link href={`/dashboard/bookings/${booking.id}/reschedule`} className="flex-1">
                       <RefreshCw className="mr-1 size-3" />
                       Reprogramar
-                    </Button>
-                  </Link>
+                    </Link></Button>
                 )}
                 <div className="flex-1">
                   {/* Cancelar SÍ queda: es la única acción que sobre una reserva
@@ -298,7 +298,7 @@ export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, b
           )}
         </div>
 
-        <SheetFooter className="p-4">
+        <SheetFooter className="shrink-0 border-t border-border p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
           <Button variant="outline" onClick={() => onOpenChange(false)} className="w-full">
             Cerrar
           </Button>

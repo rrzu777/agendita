@@ -8,18 +8,18 @@ import { Skeleton } from '@/components/ui/skeleton'
 // preserva; solo se reemplaza el contenido del <main>.
 export default function DashboardLoading() {
   return (
-    <div>
+    <div aria-busy="true" aria-label="Cargando página">
       {/* Shell del header — mismas clases que DashboardHeader */}
-      <header className="border-b border-border/50 bg-card/80 px-5 py-5 backdrop-blur md:px-10">
+      <header className="border-b border-border bg-background px-4 py-6 min-[1100px]:px-10">
         <Skeleton className="h-9 w-64 md:h-10" />
         <Skeleton className="mt-2 h-5 w-80 max-w-full" />
       </header>
 
-      <div className="p-5 md:p-10">
+      <div className="mx-auto max-w-[1420px] p-4 min-[1100px]:p-10">
         {/* Fila de KPIs */}
-        <div className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <div className="mb-6 grid grid-cols-2 gap-5 border-y border-border py-5 lg:grid-cols-4">
           {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="rounded-xl border border-border/60 bg-card p-6">
+            <div key={i} className="min-w-0">
               <Skeleton className="h-4 w-24" />
               <Skeleton className="mt-3 h-8 w-16" />
             </div>

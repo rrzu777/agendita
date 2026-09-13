@@ -35,6 +35,17 @@ const baseProps = {
   professionals: [],
 }
 
+describe('CalendarViews — operation navigation', () => {
+  it('names the route view navigation and exposes its active view', () => {
+    const html = renderToStaticMarkup(<CalendarViews {...baseProps} view="week" date="2026-06-30" bookings={[]} />)
+    const document = new DOMParser().parseFromString(html, 'text/html')
+    const nav = document.querySelector('nav[aria-label="Vista del calendario"]')
+    expect(nav?.querySelector('[aria-current="page"]')?.textContent).toBe('Semana')
+    expect(html).toContain('Agenda de la semana')
+    expect(html).toContain('No hay citas ni bloqueos en este período')
+  })
+})
+
 const booking = {
   id: 'b1',
   startDateTime: '2026-06-30T17:00:00.000Z',
@@ -139,15 +150,16 @@ describe('CalendarViews — bloqueo interactivo (día)', () => {
   })
 })
 
-describe('CalendarViews — reserva clicable en vista de mes (stretched link)', () => {
-  it('la celda mantiene un link de fondo y la reserva es un botón independiente', () => {
+describe('CalendarViews — reserva clicable en vista de mes', () => {
+  it('el día y la reserva mantienen controles independientes sin enlace superpuesto', () => {
     const html = renderToStaticMarkup(
       // @ts-expect-error props mínimos de prueba
       <CalendarViews {...baseProps} view="month" date="2026-06-30" bookings={[booking]} />,
     )
     expect(html).toContain('view=day')
-    expect(html).toContain('pointer-events-none')
-    expect(html).toContain('pointer-events-auto')
+    const document = new DOMParser().parseFromString(html, 'text/html')
+    expect(document.querySelector('a[aria-label^="Ver"]')?.classList.contains('absolute')).toBe(false)
+    expect(document.querySelector('button[aria-label^="Ana —"]')?.closest('a')).toBeNull()
     expect(html).toContain('aria-label="Ana —')
   })
 })
