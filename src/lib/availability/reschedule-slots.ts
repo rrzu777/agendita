@@ -1,4 +1,6 @@
 import { prisma } from '@/lib/db'
+import { bookingDurationMinutes } from '@/lib/bookings/service-lines'
+import { UserError } from '@/lib/actions/result'
 import { generateSlots } from '@/lib/availability/slots'
 import { getBusinessDayRange } from '@/lib/availability/timezone'
 import { getEffectiveBlocks } from '@/lib/availability/effective-blocks'
@@ -15,11 +17,19 @@ export async function computeRescheduleSlots(
     id: string
     businessId: string
     professionalId: string | null
+    startDateTime: Date
+    endDateTime: Date
+    serviceLines?: { serviceId: string }[]
     service: { durationMinutes: number }
     business: { timezone: string | null; bookingWindowDays: number | null; slotStepMinutes: number | null }
   },
   date: Date
 ) {
+  if (booking.serviceLines && booking.serviceLines.length > 1) {
+    const ids = booking.serviceLines.map(line => line.serviceId)
+    const active = await prisma.service.count({ where: { id: { in: ids }, businessId: booking.businessId, isActive: true } })
+    if (active !== ids.length) throw new UserError('Uno de los servicios ya no está disponible para reprogramar')
+  }
   const timezone = booking.business.timezone || 'America/Santiago'
   const bookingWindowDays = booking.business.bookingWindowDays ?? 90
   const { dayStart, dayEnd } = getBusinessDayRange(date, timezone)
@@ -43,7 +53,7 @@ export async function computeRescheduleSlots(
     }),
   ])
 
-  return generateSlots(date, booking.service.durationMinutes, availabilityRules, timeBlocks, bookings, {
+  return generateSlots(date, bookingDurationMinutes(booking), availabilityRules, timeBlocks, bookings, {
     timezone,
     now: new Date(),
     bookingWindowDays,

@@ -11,11 +11,13 @@ import { attempt, booking, now } from '../helpers/analytics-fixtures'
 
 let store: AnalyticsStore
 let captureReady = true
+const googleLogin = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
+vi.mock('@/lib/auth/actions', () => ({ signInWithGoogle: googleLogin }))
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }))
 vi.mock('next/dynamic', () => ({ default: () => () => <p>Payment boundary</p> }))
 vi.mock('@/components/analytics/public-analytics', () => ({ usePublicAnalytics: () => ({ ready: captureReady, track: store.track, startAttempt: store.startAttempt, changeSelection: store.changeSelection, revision: () => store.snapshot()?.revision ?? 1, attemptIdentity: () => store.snapshot()?.active ?? null, rememberSelection: store.rememberSelection, reconcileSelection: (s: string) => store.reconcileSelection(s) }) }))
-vi.mock('@/components/booking/step-date', () => ({ StepDate: ({ onSelect, onBack }: { onSelect: (date: Date) => void; onBack: () => void }) => <><button onClick={() => onSelect(new Date('2026-08-31T12:00:00Z'))}>Fecha fixture</button><button onClick={onBack}>Atrás</button></> }))
-vi.mock('@/components/booking/step-time', () => ({ StepTime: ({ onSelect, onBack }: { onSelect: (slot: { start: Date; end: Date }) => void; onBack: () => void }) => <><button onClick={() => onSelect({ start: new Date('2026-08-31T14:00:00Z'), end: new Date('2026-08-31T14:30:00Z') })}>Hora fixture</button><button onClick={onBack}>Atrás</button></> }))
+vi.mock('@/server/actions/availability', () => ({ getAvailabilityPreview: vi.fn(() => new Promise(() => {})) }))
+vi.mock('@/components/booking/step-date-time', () => ({ StepDateTime: ({ onDate, onSelect, onBack }: { onDate: (date: Date) => void; onSelect: (slot: { start: Date; end: Date }) => void; onBack: () => void }) => <><button onClick={() => onDate(new Date('2026-08-31T12:00:00Z'))}>Fecha fixture</button><button onClick={() => onSelect({ start: new Date('2026-08-31T14:00:00Z'), end: new Date('2026-08-31T14:30:00Z') })}>Hora fixture</button><button onClick={onBack}>Atrás</button></> }))
 vi.mock('@/components/booking/step-customer', () => ({ StepCustomer: ({ onSubmit, onBack, onLoginCta }: { onSubmit: (data: object) => void; onBack: () => void; onLoginCta: (data: object) => void }) => <><button onClick={() => onSubmit({ customerName: 'Private name', customerPhone: 'private phone' })}>Datos fixture</button><button onClick={() => onLoginCta({ customerName: 'Private login name' })}>Login fixture</button><button onClick={onBack}>Atrás</button></> }))
 import { BookingWizard } from '@/components/booking/wizard'
 const service = (id: string, modalities = ['on_site']): Service => ({ id, name: id, isActive: true, price: 1000, depositAmount: 0, durationMinutes: 30, pastelColor: '#fff', modalities } as Service)
@@ -60,13 +62,14 @@ describe('wizard evidence follows actual interactions', () => {
     const state = store.snapshot()!
     expect(state.streams.find((s) => s.key === state.active)?.entryKind).toBe('partial')
     expect(state.queue.map((q) => q.event.type)).toEqual(['step_viewed'])
-    await clickButton(host, 'En el local')
+    await act(async () => (host.querySelector('input[type="radio"]') as HTMLInputElement).click()); await clickButton(host, 'Continuar')
     expect(store.snapshot()?.queue.some((q) => q.event.type === 'service_selected')).toBe(true)
     expect(store.snapshot()?.queue.some((q) => q.event.type === 'service_considered')).toBe(false)
   })
   it('records anyone explicitly only when the actual optional professional step is displayed', async () => {
     render([service('Corte')], ['one', 'two'].map((id) => ({ id, name: id, bio: null, modalities: ['on_site'], serviceIds: ['Corte'] })))
     await clickButton(host, 'Corte', { match: 'contains' })
+    await clickButton(host, 'Continuar')
     await clickButton(host, 'Cualquiera disponible', { match: 'contains' })
     const events = store.snapshot()!.queue.map((q) => q.event)
     expect(events.find((e) => e.type === 'service_selected')?.data).toMatchObject({ professionalStepRequired: true })
@@ -75,9 +78,11 @@ describe('wizard evidence follows actual interactions', () => {
   })
   it('restores valid selection after login without reconstructing explicit interactions or a new full attempt', async () => {
     render([service('Corte')])
-    await clickButton(host, 'Corte', { match: 'contains' }); await clickButton(host, 'Fecha fixture'); await clickButton(host, 'Hora fixture')
+    await clickButton(host, 'Corte', { match: 'contains' }); await clickButton(host, 'Continuar'); await clickButton(host, 'Fecha fixture'); await clickButton(host, 'Hora fixture')
     const before = store.snapshot()!
     await clickButton(host, 'Login fixture')
+    expect(googleLogin).toHaveBeenLastCalledWith('/ir/salon?continuar=1')
+    expect(window.location.search).toBe('?continuar=1')
     act(() => root.unmount()); root = createRoot(host)
     window.history.replaceState({}, '', '/?continuar=1')
     render([service('Corte')])
@@ -90,7 +95,7 @@ describe('wizard evidence follows actual interactions', () => {
   })
   it('a restored booking with lost analytics identity starts partial without invented selection evidence', async () => {
     render([service('Corte')])
-    await clickButton(host, 'Corte', { match: 'contains' }); await clickButton(host, 'Fecha fixture'); await clickButton(host, 'Hora fixture'); await clickButton(host, 'Login fixture')
+    await clickButton(host, 'Corte', { match: 'contains' }); await clickButton(host, 'Continuar'); await clickButton(host, 'Fecha fixture'); await clickButton(host, 'Hora fixture'); await clickButton(host, 'Login fixture')
     act(() => root.unmount()); root = createRoot(host)
     store.discardState(); store.open()
     window.history.replaceState({}, '', '/?continuar=1')
@@ -105,17 +110,42 @@ describe('wizard evidence follows actual interactions', () => {
     await clickButton(host, 'Corte', { match: 'contains' })
     expect(store.snapshot()?.queue.some((q) => q.event.type === 'service_considered')).toBe(true)
     expect(store.snapshot()?.queue.some((q) => q.event.type === 'service_selected')).toBe(false)
-    await clickButton(host, 'En el local')
+    await act(async () => (host.querySelector('input[type="radio"]') as HTMLInputElement).click()); await clickButton(host, 'Continuar')
     expect(store.snapshot()?.queue.find((q) => q.event.type === 'service_selected')?.event.data).toMatchObject({ serviceId: 'Corte', modality: 'on_site', professionalStepRequired: false })
+  })
+  it('emits the complete multi-service selection plus accepted add/remove observations without contact data', async () => {
+    render([service('Corte'), service('Barba')])
+    await clickButton(host, 'Corte', { match: 'contains' })
+    await clickButton(host, 'Barba', { match: 'contains' })
+    await clickButton(host, 'Continuar')
+    const events = store.snapshot()!.queue.map(item => item.event)
+    expect(events.filter(event => event.type === 'service_selection_changed').map(event => event.data)).toMatchObject([
+      { serviceId: 'Corte', action: 'add', result: 'accepted', selectedServiceIds: ['Corte'] },
+      { serviceId: 'Barba', action: 'add', result: 'accepted', selectedServiceIds: ['Corte', 'Barba'] },
+    ])
+    expect(events.find(event => event.type === 'service_selected')?.data).toMatchObject({ serviceId: 'Corte', serviceIds: ['Corte', 'Barba'] })
+    expect(JSON.stringify(events)).not.toContain('customerName')
+  })
+  it('records a blocked multi-service combination when no professional can perform all services', async () => {
+    render([service('Corte'), service('Barba')], [
+      { id: 'one', name: 'One', bio: null, modalities: ['on_site'], serviceIds: ['Corte'] },
+      { id: 'two', name: 'Two', bio: null, modalities: ['on_site'], serviceIds: ['Barba'] },
+    ])
+    await clickButton(host, 'Corte', { match: 'contains' })
+    await clickButton(host, 'Barba', { match: 'contains' })
+    expect(host.textContent).toContain('Ningún profesional realiza todos estos servicios')
+    expect(store.snapshot()!.queue.find(item => item.event.type === 'service_selection_changed' && item.event.data.serviceId === 'Barba')?.event.data).toMatchObject({ result: 'incompatible', selectedServiceIds: ['Corte', 'Barba'] })
   })
   it('A time then B selection invalidates downstream evidence and never includes customer fields', async () => {
     render([service('Corte'), service('Masaje')])
-    await clickButton(host, 'Corte', { match: 'contains' }); await clickButton(host, 'Fecha fixture'); await clickButton(host, 'Hora fixture')
-    await clickButton(host, 'Atrás'); await clickButton(host, 'Atrás'); await clickButton(host, 'Atrás')
+    await clickButton(host, 'Corte', { match: 'contains' }); await clickButton(host, 'Continuar'); await clickButton(host, 'Fecha fixture'); await clickButton(host, 'Hora fixture')
+    await clickButton(host, 'Atrás'); await clickButton(host, 'Atrás')
+    await clickButton(host, 'Corte', { match: 'contains' })
     await clickButton(host, 'Masaje', { match: 'contains' })
+    await clickButton(host, 'Continuar')
     await clickButton(host, 'Fecha fixture'); await clickButton(host, 'Hora fixture'); await clickButton(host, 'Datos fixture')
     const events = store.snapshot()!.queue.map((q) => q.event)
-    expect(events.filter((e) => e.type === 'selection_context_changed').at(-1)?.data).toMatchObject({ reason: 'service', context: { serviceId: 'Masaje' } })
+    expect(events.filter((e) => e.type === 'selection_context_changed' && e.data.reason === 'service').at(-1)?.data).toMatchObject({ reason: 'service', context: { serviceId: 'Masaje' } })
     expect(events.filter((e) => e.type === 'time_selected').at(-1)?.data).toMatchObject({ serviceId: 'Masaje' })
     expect(events.some((e) => e.type === 'customer_step_completed')).toBe(true)
     expect(JSON.stringify(events)).not.toMatch(/Private name|private phone|customerName|customerPhone/)

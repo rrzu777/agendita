@@ -42,6 +42,7 @@ describe('getBookingsByRange', () => {
       orderBy: { startDateTime: 'asc' },
       include: {
         service: true,
+        serviceLines: { select: { position: true, name: true } },
         customer: true,
         professional: { select: { name: true } },
         // El chip necesita saber si hay una transferencia declarada o un pago

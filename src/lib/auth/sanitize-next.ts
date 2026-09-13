@@ -10,6 +10,9 @@
 export function sanitizeNext(next: string | null, fallback = '/dashboard'): string {
   if (!next) return fallback
   if (!next.startsWith('/')) return fallback
+  // URL parsing removes ASCII controls before resolving the host. For example
+  // /<TAB>/evil becomes //evil; checking the literal prefix alone is unsafe.
+  if ([...next].some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127)) return fallback
   // Protocol-relative (//evil.com) y backslash (/\evil.com): los browsers y
   // new URL() normalizan \ a / en schemes especiales, así que /\evil.com
   // termina siendo https://evil.com/ — ambos son open redirects.
@@ -31,6 +34,7 @@ export function authErrorRedirectPath(next: string | null, error: string): strin
     safeNext === '/mi' ||
     safeNext.startsWith('/mi/') ||
     safeNext.startsWith('/tarjeta/') ||
+    safeNext.startsWith('/ir/') ||
     safeNext.startsWith('/paquetes')
   if (isCustomerFlow) {
     return `/ingresar?error=${encodeURIComponent(error)}&next=${encodeURIComponent(safeNext)}`

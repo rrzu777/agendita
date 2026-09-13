@@ -9,7 +9,7 @@ import { getBusinessDayRange } from '@/lib/availability/timezone'
 import { bookingBlocksProfessional, bookingsOfDayWhere } from '@/lib/availability/scope'
 import { occupiesSlot, type SlotOccupancyFields } from '@/lib/bookings/approval'
 import { professionalEligibilityWhere, type ProfessionalPick } from '@/lib/professionals/eligible'
-import { activeProfessionalWhere } from '@/lib/professionals/ownership'
+import { activeProfessionalWhere, assertProfessionalOffersService } from '@/lib/professionals/ownership'
 import { UserError } from '@/lib/actions/result'
 
 /**
@@ -53,6 +53,7 @@ async function candidatesByLoad(
   args: {
     businessId: string
     serviceId: string
+    serviceIds?: string[]
     modality: ServiceModality
     startDateTime: Date
     endDateTime: Date
@@ -62,7 +63,7 @@ async function candidatesByLoad(
   const elegibles = await tx.professional.findMany({
     where: {
       ...activeProfessionalWhere(args.businessId),
-      ...professionalEligibilityWhere(args.serviceId, args.modality),
+      ...professionalEligibilityWhere(args.serviceIds ?? args.serviceId, args.modality),
     },
     select: { id: true },
     orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
@@ -125,6 +126,14 @@ export async function assertSlotAndResolveProfessional(
 
   await assertSlotIsBookable(slot)
 
+  if (slot.serviceIds && slot.serviceIds.length > 1) {
+    if (professional.kind === 'person') {
+      await assertProfessionalOffersService(slot.tx, slot.businessId, professional.id, slot.serviceIds, modality)
+    } else if (professional.kind === 'none' && await slot.tx.professional.findFirst({ where: activeProfessionalWhere(slot.businessId), select: { id: true } })) {
+      throw new UserError('Elige un profesional que pueda realizar todos los servicios')
+    }
+  }
+
   if (professional.kind !== 'anyone') {
     const professionalId = professional.kind === 'person' ? professional.id : null
     await assertProfessionalIsFree({ ...slot, professionalId })
@@ -134,6 +143,7 @@ export async function assertSlotAndResolveProfessional(
   const candidatos = await candidatesByLoad(slot.tx, {
     businessId: slot.businessId,
     serviceId: slot.serviceId,
+    serviceIds: slot.serviceIds,
     modality,
     startDateTime: slot.startDateTime,
     endDateTime: slot.endDateTime,

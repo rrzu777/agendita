@@ -5,7 +5,7 @@ export type Population = 'sessions' | 'complete_attempts' | 'partial_attempts'
 export type Grain = 'total' | 'channel' | 'acquisition_link' | 'service'
 export type Milestone = 'started' | 'service' | 'professional' | 'date' | 'time' | 'customer' | 'payment' | 'submit'
 export type CoverageState = 'complete' | 'partial' | 'disabled' | 'unknown'
-export type MetricKey = '__publication__' | 'visits' | 'visit_to_attempt' | 'attempts' | 'conversion' | 'bookings_created' | 'conversion_path_complete' | 'conversion_path_incomplete' | 'known_interruption' | 'measurement_incomplete' | 'availability_empty' | 'availability_error' | 'service_interest' | 'service_selected' | 'service_conversion' | 'service_conversion_unobserved' | `milestone:${Milestone}` | `last_step:${'service' | 'professional' | 'date' | 'time' | 'customer' | 'payment' | 'confirmation'}`
+export type MetricKey = '__publication__' | 'visits' | 'visit_to_attempt' | 'attempts' | 'conversion' | 'bookings_created' | 'conversion_path_complete' | 'conversion_path_incomplete' | 'known_interruption' | 'measurement_incomplete' | 'availability_empty' | 'availability_error' | 'service_interest' | 'service_selected' | 'service_addition' | 'service_removal' | 'service_incompatible' | 'service_conversion' | 'service_conversion_unobserved' | `milestone:${Milestone}` | `last_step:${'service' | 'professional' | 'date' | 'time' | 'customer' | 'payment' | 'confirmation'}`
 export interface CohortIdentity {
   businessId: string
   cohortLocalDate: string
@@ -30,6 +30,8 @@ export interface AttemptFact extends CohortIdentity {
   entryKind: EntryKind
   acquisition: AcquisitionSource
   knownCaptureGap: boolean
+  /** Booking journey shape; independent from consent and metric-definition versions. */
+  flowVersion?: 1 | 2
 }
 /** Repository verifies scopes and parses stored data through analyticsEventSchema. */
 export interface ObservedEvent { event: AnalyticsEventInput; receivedAt: Date }
@@ -39,6 +41,8 @@ export interface BookingFact {
   analyticsAttemptId: string | null
   createdAt: Date
   serviceId: string
+  /** Persisted booking lines; absent only for historical single-service facts. */
+  serviceIds?: string[]
   modality: SelectionContext['modality']
   analyticsSelectionRevision: number | null
 }
@@ -59,6 +63,9 @@ export interface AttemptProjection {
   outcome: 'in_progress' | 'converted' | 'known_interruption' | 'measurement_incomplete'
   consideredServices: string[]
   selectedServices: string[]
+  serviceAdditions: string[]
+  serviceRemovals: string[]
+  incompatibleServices: string[]
   convertedServices: string[]
   convertedServicesWithInterest: string[]
   convertedServicesWithoutInterest: string[]
@@ -77,6 +84,7 @@ export interface AttemptFlow {
 }
 export type FlowProfessionalKey = 'not_observed' | 'none:not_required' | 'none:not_observed' | `${'anyone' | 'person'}:${'explicit' | 'not_required' | 'not_observed'}`
 export interface FlowBreakdownGroup {
+  flowVersion: 1 | 2
   entryKind: EntryKind
   maturity: 'mature' | 'in_progress'
   attempts: number

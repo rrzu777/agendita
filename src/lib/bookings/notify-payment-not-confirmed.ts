@@ -16,6 +16,7 @@
  * que nunca hace fallar el cobro que la disparó. Sin `'use server'` a propósito:
  * es una función server-side común, no un endpoint.
  */
+import { bookingServiceName } from '@/lib/bookings/service-lines'
 import { prisma } from '@/lib/db'
 import { getVocabulary } from '@/lib/vocabulary'
 import { formatBookingNumber } from '@/lib/bookings/number'
@@ -35,7 +36,7 @@ export async function firePaymentNotConfirmedNotification(args: {
       bookingNumber: true,
       startDateTime: true,
       customer: { select: { name: true } },
-      service: { select: { name: true } },
+      service: { select: { name: true } }, serviceLines: { select: { position: true, name: true } },
       business: { select: { name: true, currency: true, timezone: true, category: true } },
     },
   })
@@ -46,7 +47,7 @@ export async function firePaymentNotConfirmedNotification(args: {
       businessName: booking.business.name,
       businessCategory: booking.business.category,
       customerName: booking.customer?.name ?? getVocabulary(booking.business.category).Client,
-      serviceName: booking.service?.name ?? 'servicio',
+      serviceName: bookingServiceName(booking),
       bookingLabel: formatBookingNumber(booking.bookingNumber, args.bookingId),
       startDateTime: booking.startDateTime,
       businessTimezone: booking.business.timezone || 'America/Santiago',

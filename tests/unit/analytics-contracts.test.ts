@@ -8,6 +8,12 @@ describe('closed analytics inputs', () => {
   it('accepts service interest before modality is resolved', () => {
     expect(analyticsEventSchema.safeParse({ ...base, type: 'service_considered', data: { serviceId: 'service-a' } }).success).toBe(true)
   })
+  it('accepts a bounded, distinct multi-service context and rejects malformed selections', () => {
+    const valid = { ...context, serviceIds: ['service-a', 'service-b'] }
+    expect(analyticsEventSchema.safeParse({ ...base, type: 'service_selected', data: { ...valid, professionalStepRequired: false } }).success).toBe(true)
+    expect(analyticsEventSchema.safeParse({ ...base, type: 'service_selected', data: { ...valid, serviceIds: ['service-a', 'service-a'], professionalStepRequired: false } }).success).toBe(false)
+    expect(analyticsEventSchema.safeParse({ ...base, type: 'service_selected', data: { ...valid, serviceId: 'service-b', professionalStepRequired: false } }).success).toBe(false)
+  })
   it('rejects PII, client identities, timestamps and unknown properties', () => {
     for (const extra of [{ data: { email: 'fixture@example.invalid' } }, { businessId: 'other' }, { occurredAt: '2026-01-01' }]) {
       expect(analyticsEventSchema.safeParse({ ...base, type: 'customer_step_completed', data: {}, ...extra }).success).toBe(false)

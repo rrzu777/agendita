@@ -1,5 +1,9 @@
 'use server'
 
+import { normalizeServiceSelection, resolveSelectedServices } from '@/lib/bookings/selection'
+import { promotionLineScope } from '@/lib/promotions/line-scope'
+import { allocateLineDiscount, snapshotServiceLines } from '@/lib/bookings/service-lines'
+
 import { prisma } from '@/lib/db'
 import { revalidatePath } from 'next/cache'
 import { checkRateLimit } from '@/lib/rate-limit'
@@ -155,7 +159,7 @@ const GENERIC_INVALID = { ok: false as const, message: 'Código inválido o no a
  *  seguridad ante un throw inesperado (p. ej. checkRateLimit); el resultado
  *  {ok,discount|message} de acá adentro es un contrato propio, no ActionResult,
  *  y viaja como `data` — no lo confundas con el ok/error del wrapper. */
-async function _previewPromotion(input: { businessId: string; code: string; serviceId: string; phone?: string }) {
+async function _previewPromotion(input: { businessId: string; code: string; serviceId?: string; serviceIds?: string[]; phone?: string }) {
   const limit = await checkRateLimit('preview-promotion', 30, 60000)
   if (!limit.success) return GENERIC_INVALID
 
@@ -166,10 +170,19 @@ async function _previewPromotion(input: { businessId: string; code: string; serv
   // aplicar, dentro de createBooking). Un error transitorio de Prisma degrada a
   // la misma respuesta genérica en vez de romper el wizard con un 500.
   try {
-    const service = await prisma.service.findFirst({
-      where: { id: input.serviceId, businessId: input.businessId, isActive: true },
+    const ids = normalizeServiceSelection(input)
+    const selected = ids.length > 1 ? resolveSelectedServices(input.businessId, ids, await prisma.service.findMany({
+      where: { id: { in: ids }, businessId: input.businessId, isActive: true },
+    })) : null
+    const service = selected ? { ...selected.services[0], price: selected.totalPrice } : await prisma.service.findFirst({
+      where: { id: ids[0], businessId: input.businessId, isActive: true },
     })
     if (!service) return GENERIC_INVALID
+    const lines = selected?.services.map(s => ({ serviceId: s.id, price: s.price })) ?? [{ serviceId: ids[0], price: service.price }]
+    const preview = (discount: number, promotionId: string, eligibleServiceIds: string[]) => ({
+      ok: true as const, discount, finalAmount: service.price - discount, promotionId,
+      ...(selected ? { eligibleServiceIds, depositRequired: allocateLineDiscount(snapshotServiceLines(selected.services), discount, eligibleServiceIds).reduce((sum, line) => sum + line.depositAmount, 0) } : {}),
+    })
 
     // Rama grant (canje de puntos)
     const grant = await prisma.promotionGrant.findFirst({
@@ -178,11 +191,12 @@ async function _previewPromotion(input: { businessId: string; code: string; serv
     })
     if (grant) {
       const p = grant.promotion
+      const scope = promotionLineScope({ ...p, serviceIds: p.services.map(s => s.id) }, lines)
       if (grant.expiresAt && new Date() > grant.expiresAt) return GENERIC_INVALID
-      if (!p.appliesToAll && !p.services.some((s: { id: string }) => s.id === input.serviceId)) return GENERIC_INVALID
-      if (p.minSpend != null && service.price < p.minSpend) return GENERIC_INVALID
-      const discount = computeDiscount({ ...p, serviceIds: p.services.map((s: { id: string }) => s.id) } as Parameters<typeof computeDiscount>[0], service.price)
-      return { ok: true as const, discount, finalAmount: service.price - discount, promotionId: p.id }
+      if (!scope.serviceIds.length) return GENERIC_INVALID
+      if (p.minSpend != null && scope.totalPrice < p.minSpend) return GENERIC_INVALID
+      const discount = computeDiscount({ ...p, serviceIds: p.services.map((s: { id: string }) => s.id) } as Parameters<typeof computeDiscount>[0], scope.totalPrice)
+      return preview(discount, p.id, scope.serviceIds)
     }
 
     // Rama código (triggerType='code') — reusa `service`, ya no se vuelve a buscar
@@ -191,6 +205,8 @@ async function _previewPromotion(input: { businessId: string; code: string; serv
       include: { services: { select: { id: true } } },
     })
     if (!promo) return GENERIC_INVALID
+    const scope = promotionLineScope({ ...promo, serviceIds: promo.services.map(s => s.id) }, lines)
+    if (!scope.serviceIds.length) return GENERIC_INVALID
 
     let customerRedemptions = 0
     if (input.phone && promo.maxPerCustomer != null) {
@@ -207,10 +223,10 @@ async function _previewPromotion(input: { businessId: string; code: string; serv
 
     const result = isRedeemable({
       promo: { ...promo, serviceIds: promo.services.map(s => s.id) },
-      serviceId: input.serviceId, totalPrice: service.price, customerRedemptions, now: new Date(),
+      serviceId: scope.serviceIds[0], totalPrice: scope.totalPrice, customerRedemptions, now: new Date(),
     })
     if (!result.ok) return GENERIC_INVALID
-    return { ok: true as const, discount: result.discount, finalAmount: service.price - result.discount, promotionId: promo.id }
+    return preview(result.discount, promo.id, scope.serviceIds)
   } catch {
     return GENERIC_INVALID
   }

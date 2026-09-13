@@ -72,7 +72,7 @@ export function ServiceForm({
   triggerIcon,
   currency,
 }: {
-  service?: { id: string; name: string; description: string | null; durationMinutes: number; price: number; depositAmount: number; pastelColor: string; modalities: ServiceModality[]; isActive: boolean; sortOrder: number } | null
+  service?: { id: string; name: string; description: string | null; category?: string | null; durationMinutes: number; price: number; depositAmount: number; pastelColor: string; modalities: ServiceModality[]; isActive: boolean; sortOrder: number } | null
   onSuccess?: () => void
   triggerLabel?: string
   triggerIcon?: ReactNode
@@ -168,6 +168,7 @@ export function ServiceForm({
     const data: Record<string, unknown> = {
       name: (formData.get('name') as string).trim(),
       description: (formData.get('description') as string).trim() || null,
+      category: String(formData.get('category') ?? '').trim() || null,
       durationMinutes: parseInt(formData.get('durationMinutes') as string),
       price: parseInt(formData.get('price') as string),
       depositAmount: parseInt(formData.get('depositAmount') as string),
@@ -210,6 +211,9 @@ export function ServiceForm({
           </DialogDescription>
         </DialogHeader>
         <form action={handleSubmit} className="space-y-5">
+          <FormField id={`${formId}-category`} label="Categoría (opcional)" help="Agrupa los servicios en la página de reservas. Por ejemplo: Cortes, Barba o Tratamientos.">
+            {(a11y) => <Input {...a11y} density="form" id={`${formId}-category`} name="category" defaultValue={service?.category ?? ''} maxLength={60} />}
+          </FormField>
           <FormField id={`${formId}-name`} label="Nombre" required>
             {(a11y) => (
               <Input

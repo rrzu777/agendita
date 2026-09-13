@@ -10,6 +10,7 @@ import { ServiceModality, type BookingStatus } from '@prisma/client'
 import { formatBookingNumber } from '@/lib/bookings/number'
 import { getBookingConfirmationUrl } from '@/lib/business/urls'
 import { linkNavegable } from '@/lib/services/modality'
+import { bookingServiceName } from '@/lib/bookings/service-lines'
 
 /**
  * Dominio del UID. Va fijo y NO sale de `APP_DOMAIN` a propósito: el UID es la
@@ -69,6 +70,7 @@ export interface BookingEventSource {
   serviceAddress: string | null
   meetingUrl: string | null
   service: { name: string }
+  serviceLines?: { position: number; name: string }[]
   /** Quién atiende, para la descripción del evento. Requerido a propósito:
    *  si fuera opcional, la misma reserva daría un `.ics` distinto según qué
    *  caller lo armó (la ruta que sirve el archivo vs. el adjunto del mail), y
@@ -105,7 +107,7 @@ function locationOf(booking: BookingEventSource): string | null {
 function titleOf(booking: BookingEventSource): string {
   // "en" cuando la clienta va a algún lado, "con" cuando no se mueve.
   const preposicion = booking.modality === ServiceModality.on_site ? 'en' : 'con'
-  return `${booking.service.name} ${preposicion} ${booking.business.name}`
+  return `${bookingServiceName(booking)} ${preposicion} ${booking.business.name}`
 }
 
 export function buildBookingCalendarEvent(booking: BookingEventSource): BookingCalendarEvent {

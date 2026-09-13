@@ -1,5 +1,6 @@
 'use client'
 
+import { bookingServiceName } from '@/lib/bookings/service-lines'
 import { useState } from 'react'
 import Link from 'next/link'
 import { RefreshCw } from 'lucide-react'
@@ -63,7 +64,7 @@ export function BookingRowActions({
         {contactInline}
         <ReviveBookingButton
           bookingId={booking.id}
-          serviceName={booking.service?.name || 'Servicio'}
+          serviceName={bookingServiceName(booking)}
           customerName={booking.customer?.name}
           customerHasEmail={!!booking.customer?.email}
           canReopen={canReopen}

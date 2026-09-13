@@ -398,7 +398,7 @@ describe('createBooking idempotency', () => {
       // La persona viaja en la lectura de la key y no sólo en la creación: el
       // reintento devuelve ESA reserva, y sin el nombre la confirmación de quien
       // pidió "cualquiera" no podría decir quién la atiende.
-      include: { service: true, customer: true, professional: { select: { name: true } } },
+      include: { service: true, serviceLines: { orderBy: { position: 'asc' } }, customer: true, professional: { select: { name: true } } },
     })
   })
 

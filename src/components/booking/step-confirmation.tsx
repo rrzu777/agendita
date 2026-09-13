@@ -25,10 +25,10 @@ export interface ConfirmationBusiness {
   whatsapp: string | null
 }
 
-export function StepConfirmation({ data, timezone, currency, bookingId, bookingNumber, mode, promo, sessionEmail, business, where, confirmed, professionalName, cancellationCutoffHours, cancellationPolicySnapshot, depositRequired, depositPaid, pushMode = null, pushGrant = null, canonicalOrigin = '' }: { data: BookingData; timezone: string; currency: string; bookingId: string | null; bookingNumber: number | null; mode: 'paid' | 'pending'; promo?: { discountAmount: number; finalAmount: number } | null; sessionEmail: string | null; business: ConfirmationBusiness; where: WhereFields; confirmed: boolean; professionalName: string; cancellationCutoffHours: number; cancellationPolicySnapshot: string | null; depositRequired: number; depositPaid: number; pushMode?: 'account' | 'guest' | null; pushGrant?: string | null; canonicalOrigin?: string }) {
+export function StepConfirmation({ data, timezone, currency, bookingId, bookingNumber, mode, promo, amounts, sessionEmail, business, where, confirmed, professionalName, cancellationCutoffHours, cancellationPolicySnapshot, depositRequired, depositPaid, pushMode = null, pushGrant = null, canonicalOrigin = '' }: { data: BookingData; timezone: string; currency: string; bookingId: string | null; bookingNumber: number | null; mode: 'paid' | 'pending'; promo?: { discountAmount: number; finalAmount: number } | null; amounts?: { totalPrice: number; discountAmount: number; finalAmount: number; remainingBalance: number }; sessionEmail: string | null; business: ConfirmationBusiness; where: WhereFields; confirmed: boolean; professionalName: string; cancellationCutoffHours: number; cancellationPolicySnapshot: string | null; depositRequired: number; depositPaid: number; pushMode?: 'account' | 'guest' | null; pushGrant?: string | null; canonicalOrigin?: string }) {
   const isPending = mode === 'pending'
-  const isFree = data.servicePrice <= 0
-  const noDeposit = data.serviceDeposit <= 0
+  const isFree = (amounts?.finalAmount ?? promo?.finalAmount ?? data.servicePrice) <= 0
+  const noDeposit = depositRequired <= 0 && depositPaid <= 0
 
   // Las mismas filas que manda el mail: el momento es el mismo (la clienta ya no
   // está en la página del negocio) y contestar distinto en cada lado sería peor
@@ -48,8 +48,10 @@ export function StepConfirmation({ data, timezone, currency, bookingId, bookingN
   // Display-only: si la reserva trae un descuento, el precio efectivo para los
   // cálculos de "Total por pagar" / "Saldo" es el finalAmount persistido.
   // "Precio total" sigue mostrando el precio original (pre-descuento).
-  const hasDiscount = promo != null && promo.discountAmount > 0
-  const effectiveFinal = hasDiscount ? promo!.finalAmount : data.servicePrice
+  const discountAmount = amounts?.discountAmount ?? promo?.discountAmount ?? 0
+  const hasDiscount = discountAmount > 0
+  const effectiveFinal = amounts?.finalAmount ?? promo?.finalAmount ?? data.servicePrice
+  const remaining = amounts?.remainingBalance ?? Math.max(0, effectiveFinal - depositPaid)
   const hasPersistedDeposit = depositRequired > 0 || depositPaid > 0
   const cancellationWarning = hasPersistedDeposit
     ? cancellationWarningText(cancellationCutoffHours)
@@ -91,27 +93,27 @@ export function StepConfirmation({ data, timezone, currency, bookingId, bookingN
             <WhereRowValue row={row} />
           </div>
         ))}
-        <div className="flex justify-between gap-4"><span className="text-muted-foreground">Precio total</span><span className="font-semibold text-primary">{formatMoney(data.servicePrice, currency)}</span></div>
+        <div className="flex justify-between gap-4"><span className="text-muted-foreground">Precio total</span><span className="font-semibold text-primary">{formatMoney(amounts?.totalPrice ?? data.servicePrice, currency)}</span></div>
         {hasDiscount && (
           <>
-            <div className="flex justify-between gap-4"><span className="text-muted-foreground">Descuento</span><span className="font-semibold text-green-700">−{formatMoney(promo!.discountAmount, currency)}</span></div>
+            <div className="flex justify-between gap-4"><span className="text-muted-foreground">Descuento</span><span className="font-semibold text-green-700">−{formatMoney(discountAmount, currency)}</span></div>
             <div className="flex justify-between gap-4"><span className="text-muted-foreground">Precio final</span><span className="font-semibold text-primary">{formatMoney(effectiveFinal, currency)}</span></div>
           </>
         )}
         {noDeposit && !isFree ? (
           <div className="flex justify-between gap-4 border-t border-border/60 pt-3">
             <span className="text-muted-foreground">Saldo pendiente</span>
-            <span className="font-semibold text-primary">{formatMoney(effectiveFinal, currency)}</span>
+            <span className="font-semibold text-primary">{formatMoney(remaining, currency)}</span>
           </div>
         ) : !noDeposit ? (
           <>
             <div className="flex justify-between gap-4">
               <span className="text-muted-foreground">{isPending ? 'Abono requerido' : 'Abono pagado'}</span>
-              <span className="font-semibold text-primary">{formatMoney(data.serviceDeposit, currency)}</span>
+              <span className="font-semibold text-primary">{formatMoney(isPending ? depositRequired : depositPaid, currency)}</span>
             </div>
             <div className="flex justify-between gap-4 border-t border-border/60 pt-3">
               <span className="text-muted-foreground">{isPending ? 'Total por pagar' : 'Saldo pendiente'}</span>
-              <span className="font-semibold text-primary">{formatMoney(isPending ? effectiveFinal : effectiveFinal - data.serviceDeposit, currency)}</span>
+              <span className="font-semibold text-primary">{formatMoney(remaining, currency)}</span>
             </div>
           </>
         ) : null}

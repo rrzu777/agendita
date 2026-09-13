@@ -56,13 +56,13 @@ export function PublicAnalytics({ children, businessId, slug, consentVersion = 1
     completed.current = false
     completedBinding.current = undefined
     try {
-      store.current = createAnalyticsStore({ businessId, origin: window.location.origin, storage: window.sessionStorage, preferences: window.localStorage, consentVersion })
+      store.current = createAnalyticsStore({ businessId, origin: window.location.origin, storage: window.sessionStorage, preferences: window.localStorage, consentVersion, flowVersion: surface === 'booking' ? 2 : 1 })
       if (store.current.consent() !== true) store.current.discardState()
       setChoice(store.current.consent())
     } catch { store.current = null }
     queueMicrotask(() => { if (!disposed && store.current) setConsentReady(true) })
     return () => { disposed = true; writer.current = false; transport.current?.stop(); release.current?.(); store.current?.stop() }
-  }, [businessId, consentVersion, eligible])
+  }, [businessId, consentVersion, eligible, surface])
 
   useEffect(() => {
     function synchronize(event: StorageEvent) {

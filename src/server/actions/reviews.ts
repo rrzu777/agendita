@@ -1,5 +1,6 @@
 'use server'
 
+import { bookingServiceName } from '@/lib/bookings/service-lines'
 import { prisma } from '@/lib/db'
 import { revalidatePath } from 'next/cache'
 import { checkRateLimit } from '@/lib/rate-limit'
@@ -61,7 +62,7 @@ export async function getReviewRequest(bookingId: string, token: string) {
     where: { id: bookingId },
     include: {
       business: { select: { name: true } },
-      service: { select: { name: true } },
+      service: { select: { name: true } }, serviceLines: { select: { position: true, name: true } },
       review: true,
     },
   })
@@ -78,7 +79,7 @@ export async function getReviewRequest(bookingId: string, token: string) {
   if (booking.review) {
     return {
       businessName: booking.business.name,
-      serviceName: booking.service.name,
+      serviceName: bookingServiceName(booking),
       bookingDate: booking.startDateTime,
       bookingId: booking.id,
       alreadyReviewed: true,
@@ -87,7 +88,7 @@ export async function getReviewRequest(bookingId: string, token: string) {
 
   return {
     businessName: booking.business.name,
-    serviceName: booking.service.name,
+    serviceName: bookingServiceName(booking),
     bookingDate: booking.startDateTime,
     bookingId: booking.id,
     alreadyReviewed: false,
@@ -205,6 +206,7 @@ export async function getDashboardReviews(filters?: ReviewFilters): Promise<Revi
       { customer: { name: { contains: search, mode: 'insensitive' } } },
       { comment: { contains: search, mode: 'insensitive' } },
       { booking: { service: { name: { contains: search, mode: 'insensitive' } } } },
+      { booking: { serviceLines: { some: { name: { contains: search, mode: 'insensitive' } } } } },
     ]
   }
 
@@ -217,7 +219,7 @@ export async function getDashboardReviews(filters?: ReviewFilters): Promise<Revi
         select: {
           id: true,
           startDateTime: true,
-          service: { select: { name: true } },
+          service: { select: { name: true } }, serviceLines: { select: { position: true, name: true } },
         },
       },
     },
@@ -252,7 +254,7 @@ export async function getCompletedBookingsWithoutReview(): Promise<BookingForRev
       startDateTime: true,
       reviewToken: true,
       customer: { select: { id: true, name: true } },
-      service: { select: { name: true } },
+      service: { select: { name: true } }, serviceLines: { select: { position: true, name: true } },
     },
   })
 }
@@ -453,7 +455,7 @@ async function _sendReviewRequestEmail(bookingId: string) {
     where: { id: bookingId, businessId },
     include: {
       customer: { select: { id: true, name: true, email: true, loyaltyToken: true } },
-      service: { select: { name: true } },
+      service: { select: { name: true } }, serviceLines: { select: { position: true, name: true } },
       business: { select: { name: true, timezone: true, loyaltyConfig: { select: { isActive: true } } } },
       review: { select: { id: true } },
     },
@@ -501,7 +503,7 @@ async function _sendReviewRequestEmail(bookingId: string) {
     businessReplyToEmail: await getBusinessReplyToEmail(businessId),
     customerName: booking.customer.name,
     customerEmail: booking.customer.email,
-    serviceName: booking.service.name,
+    serviceName: bookingServiceName(booking),
     reviewLink,
     startDateTime: booking.startDateTime,
     businessTimezone: booking.business.timezone || 'America/Santiago',

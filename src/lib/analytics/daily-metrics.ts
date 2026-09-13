@@ -21,6 +21,9 @@ export const METRIC_DEFINITIONS = {
   availability_error: { population: 'attempts_by_entry', unit: 'attempts', source: 'events', windowHours: 24 },
   service_interest: { population: 'attempt_service_by_entry', unit: 'attempts', source: 'events', windowHours: 24 },
   service_selected: { population: 'attempt_service_by_entry', unit: 'attempts', source: 'events', windowHours: 24 },
+  service_addition: { population: 'attempt_service_by_entry', unit: 'attempts', source: 'events', windowHours: 24 },
+  service_removal: { population: 'attempt_service_by_entry', unit: 'attempts', source: 'events', windowHours: 24 },
+  service_incompatible: { population: 'attempt_service_by_entry', unit: 'attempts', source: 'events', windowHours: 24 },
   service_conversion: { population: 'attempt_service_by_entry', unit: 'ratio', source: 'booking_and_events', windowHours: 24 },
   service_conversion_unobserved: { population: 'attempt_service_by_entry', unit: 'attempts', source: 'booking_and_events', windowHours: 24 },
 } as const
@@ -96,10 +99,13 @@ export function aggregateDailyMetrics({ sessions, attempts, coverage, definition
           if (p.outcome === 'known_interruption' && p.lastObservedStep) add(population, grain, key, `last_step:${p.lastObservedStep}` as MetricKey, 1)
         }
         if (p.mature && p.attempt.conversionDeadlineAt <= cohort.cutoffAt) {
-          for (const service of new Set([...p.consideredServices, ...p.selectedServices, ...p.convertedServices])) {
+          for (const service of new Set([...p.consideredServices, ...p.selectedServices, ...p.serviceAdditions, ...p.serviceRemovals, ...p.incompatibleServices, ...p.convertedServices])) {
             const interest = p.consideredServices.includes(service)
             add(population, 'service', service, 'service_interest', interest ? 1 : 0)
             add(population, 'service', service, 'service_selected', p.selectedServices.includes(service) ? 1 : 0)
+            add(population, 'service', service, 'service_addition', p.serviceAdditions.includes(service) ? 1 : 0)
+            add(population, 'service', service, 'service_removal', p.serviceRemovals.includes(service) ? 1 : 0)
+            add(population, 'service', service, 'service_incompatible', p.incompatibleServices.includes(service) ? 1 : 0)
             add(population, 'service', service, 'service_conversion', p.convertedServicesWithInterest.includes(service) ? 1 : 0, interest ? 1 : 0)
             add(population, 'service', service, 'service_conversion_unobserved', p.convertedServicesWithoutInterest.includes(service) ? 1 : 0)
           }

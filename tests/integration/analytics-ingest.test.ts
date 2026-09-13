@@ -60,6 +60,15 @@ describe('real PostgreSQL bootstrap and ingest serialization', () => {
   afterEach(() => vi.unstubAllEnvs())
   afterAll(async () => { await prisma.business.deleteMany({ where: { id: { in: [businessId, `${businessId}-foreign`] } } }); await prisma.$disconnect() })
 
+  it('persists booking flow version independently from consent and rejects a conflicting replay', async () => {
+    const session = await bootstrapAnalyticsSession(context, sessionInput(), captureNow)
+    const bootstrapKey = randomUUID()
+    const input = { bootstrapKey, credential: session.credential, entryKind: 'complete' as const, flowVersion: 2 as const }
+    const receipt = await bootstrapAnalyticsAttempt(context, input, captureNow)
+    expect(await prisma.bookingFunnelAttempt.findUniqueOrThrow({ where: { id: receipt.id } })).toMatchObject({ consentVersion: 1, definitionVersion: 1, flowVersion: 2 })
+    await expect(bootstrapAnalyticsAttempt(context, { ...input, flowVersion: 1 }, captureNow)).rejects.toMatchObject({ category: 'conflict' })
+  })
+
   it('collector counts committed mixed HTTP200 receipts, retries, gap-only and all finite rejection categories', async () => {
     const before = metricCounts()
     const input = sessionInput()

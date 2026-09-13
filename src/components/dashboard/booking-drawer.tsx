@@ -1,5 +1,6 @@
 'use client'
 
+import { bookingServiceName } from '@/lib/bookings/service-lines'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { formatInTimeZone } from 'date-fns-tz'
@@ -87,7 +88,7 @@ export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, b
         <SheetHeader>
           <SheetTitle>Detalle de reserva</SheetTitle>
           <SheetDescription>
-            {booking.service?.name} — {formatInTimeZone(start, businessTimezone, "EEEE d 'de' MMMM, HH:mm", { locale: es })}
+            {bookingServiceName(booking)} — {formatInTimeZone(start, businessTimezone, "EEEE d 'de' MMMM, HH:mm", { locale: es })}
           </SheetDescription>
         </SheetHeader>
 
@@ -200,7 +201,7 @@ export function BookingDrawer({ booking, open, onOpenChange, businessCurrency, b
                 bookingNumber: booking.bookingNumber,
                 customerName: booking.customer?.name || '',
                 customerPhone: booking.customer?.phone || null,
-                serviceName: booking.service?.name || '',
+                serviceName: bookingServiceName(booking),
                 professionalName: booking.professional?.name ?? null,
                 startDateTime: booking.startDateTime,
                 businessTimezone,

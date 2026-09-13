@@ -12,16 +12,16 @@ test.afterAll(() => prisma.$disconnect())
 
 async function pickTime(page: Page, daysAhead: number, stopAtTime = false) {
   await page.getByRole('button').filter({ hasText: 'Servicio de prueba' }).click()
-  await expect(page.getByRole('heading', { name: 'Elige una fecha' })).toBeVisible()
+  await page.getByRole('button', { name: 'Continuar', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Elige fecha y hora' })).toBeVisible()
   const date = new Date()
   date.setDate(date.getDate() + daysAhead)
   const now = new Date()
   const months = (date.getFullYear() - now.getFullYear()) * 12 + date.getMonth() - now.getMonth()
   for (let index = 0; index < months; index++) await page.getByRole('button', { name: 'Mes siguiente' }).click()
-  await page.getByRole('button', { name: String(date.getDate()), exact: true }).click()
-  await page.getByRole('button', { name: 'Continuar', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Elige una hora' })).toBeVisible()
-  await page.getByRole('button').filter({ hasText: /^\d{2}:\d{2}$/ }).first().click()
+  const localDate = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+  await page.locator(`button[data-day="${localDate}"]`).click()
+  await page.getByRole('button', { name: /^\d{2}:\d{2}\s+Hasta \d{2}:\d{2}$/ }).first().click()
   if (!stopAtTime) await page.getByRole('button', { name: 'Continuar', exact: true }).click()
 }
 
@@ -29,7 +29,7 @@ async function confirmBooking(page: Page) {
   await page.getByPlaceholder('Tu nombre').fill('Synthetic Customer')
   await page.getByPlaceholder('+569...').fill('+56900000006')
   await page.getByPlaceholder('tu@email.com').fill(fixture.customerEmail)
-  await page.getByRole('button', { name: 'Continuar al pago' }).click()
+  await page.getByRole('button', { name: 'Revisar mi reserva' }).click()
   await expect(page.getByRole('heading', { name: 'Confirmar reserva', exact: true })).toBeVisible()
   const confirm = page.getByRole('button', { name: 'Confirmar reserva', exact: true })
   await expect(confirm).toBeDisabled()
@@ -76,8 +76,31 @@ test('guest can decline on mobile without an analytics identity or request; camp
   expect(await page.evaluate(() => Object.keys(sessionStorage).filter(key => key.startsWith('owner-analytics:')))).toEqual([])
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375)
   await page.screenshot({ path: 'test-results/owner-analytics-public/declined-mobile.png', fullPage: true })
-  await page.getByRole('button', { name: /¿Ya tienes cuenta/ }).click()
-  await expect(page).toHaveURL(/\/ingresar\?next=.*acq%3Dsyntheticacquisitiontoken00000006/)
+  await page.getByLabel('Nombre completo').fill('Synthetic Returning Guest')
+  await page.getByLabel('Teléfono').fill('+56900000016')
+  let oauthReturn = ''
+  await page.route('https://analytics-e2e.invalid/auth/v1/authorize**', async route => {
+    oauthReturn = new URL(route.request().url()).searchParams.get('redirect_to') ?? ''
+    await route.fulfill({ contentType: 'text/html', body: '<h1>Proveedor de acceso simulado</h1>' })
+  })
+  await page.getByRole('button', { name: 'Continuar con Google', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Proveedor de acceso simulado' })).toBeVisible()
+  const next = new URL(oauthReturn).searchParams.get('next')!
+  expect(next).toContain('acq=syntheticacquisitiontoken00000006')
+  await page.goBack()
+  await expect(page.getByRole('heading', { name: 'Tus datos', exact: true })).toBeVisible()
+  await expect(page.getByLabel('Nombre completo')).toHaveValue('Synthetic Returning Guest')
+  await expect(page.getByLabel('Teléfono')).toHaveValue('+56900000016')
+  await page.getByRole('button', { name: 'Continuar con Google', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Proveedor de acceso simulado' })).toBeVisible()
+  // Cancellation follows the exact callback error route, then the explicit guest return.
+  await page.goto(`${baseURL}/auth/callback?error=access_denied&next=${encodeURIComponent(next)}`)
+  await page.getByRole('link', { name: 'Volver a mi reserva sin iniciar sesión' }).click()
+  await expect(page.getByRole('heading', { name: 'Tus datos', exact: true })).toBeVisible()
+  await expect(page.getByLabel('Nombre completo')).toHaveValue('Synthetic Returning Guest')
+  await expect(page.getByLabel('Teléfono')).toHaveValue('+56900000016')
+  await page.getByRole('button', { name: 'Revisar mi reserva' }).click()
+  await expect(page.getByText('Servicio de prueba', { exact: true })).toBeVisible()
 })
 
 test('actual collector excludes bot and member, and records bounded HTTP ingestion samples', async ({ request }) => {

@@ -81,7 +81,7 @@ async function selectBookingDate(page: Page, targetDate: Date) {
       }
     }
   }
-  await page.getByRole('button', { name: String(targetDate.getDate()), exact: true }).click()
+  await page.locator(`button[data-day="${toLocalDateStr(targetDate)}"]`).click()
 }
 
 async function clickContinueButton(page: Page) {
@@ -181,84 +181,76 @@ test.describe('public booking', () => {
 
     // Step 1: Select service
     await page.getByRole('button').filter({ hasText: /manicura/i }).first().click()
-
-    // Step 2: Select date
-    await expect(page.getByRole('heading', { name: /elige una fecha/i })).toBeVisible()
-    await selectBookingDate(page, date)
     await clickContinueButton(page)
 
-    // Step 3: Select time slot
-    await expect(page.getByRole('heading', { name: /elige una hora/i })).toBeVisible({ timeout: 10_000 })
-    const timeSlotBtn = page.locator('button').filter({ hasText: /^\d{2}:\d{2}$/ }).first()
+    // Step 2: Select date and time
+    await expect(page.getByRole('heading', { name: /elige fecha y hora/i })).toBeVisible()
+    await selectBookingDate(page, date)
+    const timeSlotBtn = page.getByRole('button', { name: /^\d{2}:\d{2}\s+Hasta \d{2}:\d{2}$/ }).first()
     await expect(timeSlotBtn).toBeVisible({ timeout: 5_000 })
     await timeSlotBtn.click()
     await clickContinueButton(page)
 
-    // Step 4: Fill contact form
+    // Step 3: Fill contact form
     await expect(page.getByRole('heading', { name: /tus datos/i })).toBeVisible()
     await page.getByPlaceholder(/tu nombre/i).fill(customerName)
     await page.getByPlaceholder(/\+569/i).fill(customerPhone)
     await page.getByPlaceholder(/tu@email/i).fill(customerEmail)
-    await page.getByRole('button', { name: /continuar al pago/i }).click()
+    await page.getByRole('button', { name: /revisar mi reserva/i }).click()
 
-    // Step 5: Payment
+    // Step 4: Payment
     await expect(page.getByRole('heading', { name: /pago de abono|confirmar reserva/i })).toBeVisible({ timeout: 10_000 })
     await page.locator('input[type="checkbox"]#accept-terms').check()
     const payBtn = page.getByRole('button', { name: /pagar\s?abono|confirmar reserva/i }).first()
     await payBtn.click()
 
-    // Step 6: Confirmation — a deposit booking via the manual/mock fallback ends
+    // Step 5: Confirmation — a deposit booking via the manual/mock fallback ends
     // as pending ("Reserva recibida"); a no-deposit one as "Reserva confirmada".
     await expect(
       page.getByRole('heading', { name: /reserva (recibida|confirmada)|confirmación/i })
     ).toBeVisible({ timeout: 30_000 })
   })
 
-  test('booking without deposit → verify pending_payment status', async ({ page }) => {
+  test('booking without online payment account → confirms through the manual fallback', async ({ page }) => {
     await page.goto(`/book/${BUSINESS_SLUG}`)
     await page.getByRole('heading', { name: /¿qué te hacemos hoy/i }).waitFor({ timeout: 10_000 })
 
-    // Select first available service
-    const firstService = page.getByRole('button').filter({ hasText: /\w/i }).first()
-    await firstService.click()
+    await page.getByRole('button').filter({ hasText: /manicura/i }).first().click()
+    await clickContinueButton(page)
     const date = nextBookableDate(8)
     await selectBookingDate(page, date)
-    await clickContinueButton(page)
-
-    await expect(page.getByRole('heading', { name: 'Elige una hora' })).toBeVisible({ timeout: 10_000 })
-    const timeSlotBtn = page.locator('button').filter({ hasText: /^\d{2}:\d{2}$/ }).first()
+    const timeSlotBtn = page.getByRole('button', { name: /^\d{2}:\d{2}\s+Hasta \d{2}:\d{2}$/ }).first()
     await timeSlotBtn.click()
     await clickContinueButton(page)
 
     await page.getByPlaceholder(/tu nombre/i).fill('Sin Abono')
     await page.getByPlaceholder(/\+569/i).fill('+56911111111')
-    await page.getByRole('button', { name: /continuar al pago/i }).click()
+    await page.getByRole('button', { name: /revisar mi reserva/i }).click()
 
-    // For no-deposit service, should show "Confirmar reserva" (no payment needed)
+    // No online account is connected, so the deposit falls back to manual confirmation.
     await expect(page.getByRole('heading', { name: /confirmar reserva/i })).toBeVisible({ timeout: 10_000 })
     await page.locator('input[type="checkbox"]#accept-terms').check()
     await page.getByRole('button', { name: /confirmar reserva/i }).click()
 
     await expect(page.getByRole('heading', { name: /reserva (recibida|confirmada)/i })).toBeVisible({ timeout: 20_000 })
-    // With PAYMENT_PROVIDER=manual and no deposit required, booking becomes confirmed directly.
+    // Without an account connected for online payments, the booking uses the manual fallback.
   })
 
-  test('booking without deposit → verify no online payment initiated (step-payment fallback)', async ({ page }) => {
+  test('booking without online payment account → does not initiate online payment', async ({ page }) => {
     await page.goto(`/book/${BUSINESS_SLUG}`)
     await page.getByRole('heading', { name: /¿qué te hacemos hoy/i }).waitFor({ timeout: 10_000 })
     await page.getByRole('button').filter({ hasText: /manicura/i }).first().click()
+    await clickContinueButton(page)
 
     const date = nextBookableDate(9)
     await selectBookingDate(page, date)
-    await clickContinueButton(page)
-    await expect(page.getByRole('heading', { name: /elige una hora/i })).toBeVisible({ timeout: 10_000 })
-    await page.locator('button').filter({ hasText: /^\d{2}:\d{2}$/ }).first().click()
+    await page.getByRole('button', { name: /^\d{2}:\d{2}\s+Hasta \d{2}:\d{2}$/ }).first().click()
     await clickContinueButton(page)
     await page.getByPlaceholder(/tu nombre/i).fill('NoDeposit')
     await page.getByPlaceholder(/\+569/i).fill('+56922222222')
-    await page.getByRole('button', { name: /continuar al pago/i }).click()
+    await page.getByRole('button', { name: /revisar mi reserva/i }).click()
 
-    // Should show "Confirmar reserva" — no "Pagar abono" for no-deposit service
+    // The manual fallback must not expose the online deposit action.
     await expect(page.getByRole('heading', { name: /confirmar reserva/i })).toBeVisible({ timeout: 10_000 })
     const payButton = page.getByRole('button', { name: /pagar\s?abono/i })
     await expect(payButton).not.toBeVisible()
@@ -274,13 +266,17 @@ test.describe('public booking', () => {
     await page.goto(`/book/${BUSINESS_SLUG}`)
     await page.getByRole('heading', { name: /¿qué te hacemos hoy/i }).waitFor({ timeout: 10_000 })
     await page.getByRole('button').filter({ hasText: /manicura/i }).first().click()
-    await selectBookingDate(page, date)
     await clickContinueButton(page)
-    await page.locator('button').filter({ hasText: /^\d{2}:\d{2}$/ }).first().click()
+    await selectBookingDate(page, date)
+    const firstSlot = page.getByRole('button', { name: /^\d{2}:\d{2}\s+Hasta \d{2}:\d{2}$/ }).first()
+    await expect(firstSlot).toBeVisible({ timeout: 10_000 })
+    const slotName = (await firstSlot.innerText()).replace(/\s+/g, ' ').trim()
+    expect(slotName).toMatch(/^\d{2}:\d{2}\s+Hasta \d{2}:\d{2}$/)
+    await firstSlot.click()
     await clickContinueButton(page)
     await page.getByPlaceholder(/tu nombre/i).fill(firstName)
     await page.getByPlaceholder(/\+569/i).fill('+56933333333')
-    await page.getByRole('button', { name: /continuar al pago/i }).click()
+    await page.getByRole('button', { name: /revisar mi reserva/i }).click()
     await page.locator('input[type="checkbox"]#accept-terms').check()
     await page.getByRole('button', { name: /pagar\s?abono|confirmar reserva/i }).first().click()
     await expect(page.getByRole('heading', { name: /reserva (recibida|confirmada)/i })).toBeVisible({ timeout: 30_000 })
@@ -291,9 +287,10 @@ test.describe('public booking', () => {
     await page2.goto(`/book/${BUSINESS_SLUG}`)
     await page2.getByRole('heading', { name: /¿qué te hacemos hoy/i }).waitFor({ timeout: 10_000 })
     await page2.getByRole('button').filter({ hasText: /manicura/i }).first().click()
+    await clickContinueButton(page2)
     await selectBookingDate(page2, date)
     await page2.waitForTimeout(500)
-    const timeSlotBtn = page2.locator('button').filter({ hasText: /^\d{2}:\d{2}$/ }).first()
+    const timeSlotBtn = page2.getByRole('button', { name: slotName, exact: true })
     const isVisible = await timeSlotBtn.isVisible({ timeout: 3_000 }).catch(() => false)
     if (!isVisible) {
       // Slot already gone — test passes
@@ -303,7 +300,7 @@ test.describe('public booking', () => {
     await clickContinueButton(page2)
     await page2.getByPlaceholder(/tu nombre/i).fill(secondName)
     await page2.getByPlaceholder(/\+569/i).fill('+56944444444')
-    await page2.getByRole('button', { name: /continuar al pago/i }).click()
+    await page2.getByRole('button', { name: /revisar mi reserva/i }).click()
 
     // Server-side availability check should block the double-booking
     const errorText = await page2.locator('[class*="error"], [class*="destructive"]').first().textContent().catch(() => null)

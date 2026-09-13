@@ -1,6 +1,7 @@
 'use server'
 
 import { z } from 'zod'
+import { STALE_BOOKING_QUOTE_MESSAGE } from '@/lib/bookings/price-preview'
 import { prisma } from '@/lib/db'
 import type { Booking, Prisma } from '@prisma/client'
 import { BookingStatus, BookingPaymentStatus, PaymentType, ServiceModality } from '@prisma/client'
@@ -47,6 +48,7 @@ import { BANK_TRANSFER_METHOD, anyDeclaredTransferWhere } from '@/lib/bank-trans
 import { holdPrecedencePaymentWhere } from '@/lib/payments/hold-precedence'
 import { fireBookingNotifications } from '@/lib/bookings/notifications'
 import { resolveBookingDraft } from '@/lib/bookings/draft'
+import { allocateLineDiscount, bookingServiceName, bookingDurationMinutes, bookingServiceIds } from '@/lib/bookings/service-lines'
 import { issuePushGrant } from '@/lib/push/grant'
 import { isPushBookingEligible } from '@/lib/push/eligibility'
 import { cancellationPolicyRevision } from '@/lib/bookings/cancellation-policy-revision'
@@ -64,7 +66,7 @@ import {
 // de createBooking y las dos del camino del dashboard). Constante y no literal
 // repetido: sin la relación en UNA salida, la persona desaparece de la
 // respuesta sin error de compilación — pasó con las salidas de paquete/código.
-const BOOKING_RESULT_INCLUDE = { service: true, customer: true, professional: { select: { name: true } } } as const
+const BOOKING_RESULT_INCLUDE = { service: true, serviceLines: { orderBy: { position: 'asc' } }, customer: true, professional: { select: { name: true } } } as const
 
 type LockedCancellationPolicy = {
   selfServiceCutoffHours: number
@@ -134,12 +136,15 @@ const professionalPickSchema = z.discriminatedUnion('kind', [
 ])
 
 const createBookingSchema = z.object({
-  serviceId: z.string().min(1),
+  expected: z.object({ totalPrice: z.number().int().min(0).max(2147483647), durationMinutes: z.number().int().positive().max(2147483647), finalAmount: z.number().int().min(0).max(2147483647), depositRequired: z.number().int().min(0).max(2147483647) }).optional(),
+  serviceId: z.string().min(1).optional(),
+  serviceIds: z.array(z.string().min(1).max(128)).min(1).max(10).optional(),
   customerName: z.string().min(1).max(100),
   customerPhone: z.string().min(8).max(20),
   customerEmail: z.string().email().optional().or(z.literal('')),
+  customerNotes: z.string().trim().max(1000, 'Las notas son demasiado largas').optional(),
   customerBirthDate: z.string().optional().or(z.literal(''))
-    .refine((v) => !v || isValidBirthDateString(v), 'Fecha de cumpleaños inválida'),
+    .refine((v) => !v || isValidBirthDateString(v), 'Fecha de nacimiento inválida'),
   startDateTime: z.date(),
   idempotencyKey: z.string().min(1).max(64).optional(),
   acceptedTerms: z.boolean(),
@@ -197,6 +202,7 @@ const BOOKING_LIST_SELECT = {
       serviceAddress: true,
       meetingUrl: true,
       service: { select: { name: true } },
+      serviceLines: { select: { position: true, name: true } },
       // Quién atiende: la tabla y la card lo muestran junto al servicio. null =
       // sin persona asignada (negocio sin equipo o reserva anterior al track 5).
       professional: { select: { name: true } },
@@ -455,6 +461,7 @@ export async function getDashboardBookingSummary(now: Date, timezone: string) {
         startDateTime: true,
         status: true,
         service: { select: { name: true } },
+        serviceLines: { select: { position: true, name: true } },
         customer: { select: { name: true } },
         payments: {
           where: anyDeclaredTransferWhere,
@@ -468,10 +475,13 @@ export async function getDashboardBookingSummary(now: Date, timezone: string) {
 }
 
 async function _createBooking(data: {
-  serviceId: string
+  expected?: { totalPrice: number; durationMinutes: number; finalAmount: number; depositRequired: number }
+  serviceId?: string
+  serviceIds?: string[]
   customerName: string
   customerPhone: string
   customerEmail?: string
+  customerNotes?: string
   customerBirthDate?: string
   startDateTime: Date
   idempotencyKey?: string
@@ -530,15 +540,21 @@ async function _createBooking(data: {
   assertBusinessCanReceiveBookings(business.subscriptionStatus)
 
   // Servicio, modalidad y montos: todo server-side, nada del payload.
-  const { service, modality, serviceAddress, meetingUrl, totalPrice, depositRequired, finalAmount, endDateTime } =
+  const { service, serviceIds, lines, modality, serviceAddress, meetingUrl, totalPrice, depositRequired, finalAmount, endDateTime } =
     await resolveBookingDraft({
       businessId,
       serviceId: data.serviceId,
+      serviceIds: data.serviceIds,
       startDateTime: data.startDateTime,
       modality: data.modality,
       serviceAddress: data.serviceAddress,
       defaultMeetingUrl: business.defaultMeetingUrl,
     })
+
+  const expected = parsed.data.expected
+  function assertReviewedAmounts(final: number, deposit: number) {
+    if (expected && (expected.finalAmount !== final || expected.depositRequired !== deposit)) throw new UserError(STALE_BOOKING_QUOTE_MESSAGE)
+  }
 
   // Con quién. Va DESPUÉS del draft porque se valida contra la modalidad RESUELTA
   // (el servidor pisa la pedida cuando el servicio tiene una sola), y afuera de la
@@ -552,7 +568,7 @@ async function _createBooking(data: {
   // la lista de candidatos con este mismo filtro de elegibilidad.
   const professional = data.professional ?? NO_PROFESSIONAL
   if (professional.kind === 'person') {
-    await assertProfessionalOffersService(prisma, businessId, professional.id, data.serviceId, modality)
+    await assertProfessionalOffersService(prisma, businessId, professional.id, serviceIds, modality)
   }
 
   // Transferencia bancaria: validar server-side que esté habilitada. El hold
@@ -605,7 +621,9 @@ async function _createBooking(data: {
   // Las dos puertas a "esta key ya se usó" —el fast path de acá abajo y el P2002
   // del catch— pasan por el mismo resume con este contexto.
   const retryCtx = {
-    serviceId: data.serviceId,
+    expected,
+    serviceId: service.id,
+    serviceIds,
     startDateTime: data.startDateTime,
     professional,
     promotionCode: data.promotionCode,
@@ -632,6 +650,9 @@ async function _createBooking(data: {
       if (resumida) return withPushActivation(resumida, business, sessionUser)
     }
   }
+
+  // Replays compare against their accepted snapshot; only NEW bookings use today's catalogue.
+  if (expected && (expected.totalPrice !== totalPrice || expected.durationMinutes !== (endDateTime.getTime() - data.startDateTime.getTime()) / 60000)) throw new UserError(STALE_BOOKING_QUOTE_MESSAGE)
 
   const analytics = data.analytics && typeof data.analytics === 'object' && !Array.isArray(data.analytics)
     ? data.analytics as { credential?: unknown; selectionRevision?: unknown } : null
@@ -664,7 +685,8 @@ async function _createBooking(data: {
       const professionalId = await assertSlotAndResolveProfessional({
         tx,
         businessId,
-        serviceId: data.serviceId,
+        serviceId: service.id,
+        serviceIds,
         startDateTime: data.startDateTime,
         endDateTime,
         timezone: business.timezone || 'America/Santiago',
@@ -712,9 +734,11 @@ async function _createBooking(data: {
           // Verify locally only at first insert; neither replay path rewrites the original snapshot.
           ...getBookingAnalyticsSnapshot({ credential: analytics?.credential, selectionRevision: analytics?.selectionRevision, businessId, origin: analyticsOrigin, now: new Date() }),
           businessId,
-          serviceId: data.serviceId,
+          serviceId: service.id,
+          serviceLines: { create: lines },
           customerId: customer.id,
           professionalId,
+          customerNotes: data.customerNotes?.trim() || null,
           startDateTime: data.startDateTime,
           endDateTime,
           status,
@@ -737,6 +761,7 @@ async function _createBooking(data: {
         },
         include: {
           service: true,
+          serviceLines: { orderBy: { position: 'asc' } },
           customer: true,
           // El nombre vuelve al navegador porque con "Cualquiera disponible" la
           // clienta no sabe a quién le tocó hasta que se lo decimos, y el estado del
@@ -750,7 +775,8 @@ async function _createBooking(data: {
       const discount = await applyBookingDiscountInTx(tx, {
         businessId,
         customerId: customer.id,
-        serviceId: data.serviceId,
+        serviceId: service.id,
+        ...(lines.length > 1 ? { lines } : {}),
         bookingId: booking.id,
         totalPrice,
         promotionCode: parsed.data.promotionCode,
@@ -758,20 +784,34 @@ async function _createBooking(data: {
         source: 'public_booking',
       })
 
-      if (!discount) return { booking, lockedPolicy }
+      if (!discount) {
+        assertReviewedAmounts(booking.finalAmount, booking.depositRequired)
+        return { booking, lockedPolicy }
+      }
+
+      const discountedLines = allocateLineDiscount(lines, discount.discountAmount, discount.eligibleServiceIds ?? [service.id])
+      const effectiveDeposit = discountedLines.reduce((sum, line) => sum + line.depositAmount, 0)
+      assertReviewedAmounts(totalPrice - discount.discountAmount, effectiveDeposit)
 
       const updated = await tx.booking.update({
         where: { id: booking.id },
-        data: recomputeBookingAmountsAfterDiscount({
-          price: service.price, depositAmount: service.depositAmount, discountAmount: discount.discountAmount,
-          // Sin esto, una reserva-transferencia con promo perdería su ventana
-          // de 24h: recompute re-derivaba el hold a +15min incondicionalmente.
-          holdMinutes,
-          approval: {
-            requireBookingApproval: business.requireBookingApproval,
-            startDateTime: data.startDateTime,
+        data: {
+          ...recomputeBookingAmountsAfterDiscount({
+            price: totalPrice, depositAmount: effectiveDeposit, discountAmount: discount.discountAmount,
+            // Retain transfer/manual hold windows when applying a discount.
+            holdMinutes,
+            approval: {
+              requireBookingApproval: business.requireBookingApproval,
+              startDateTime: data.startDateTime,
+            },
+          }),
+          serviceLines: {
+            updateMany: discountedLines.map(line => ({
+              where: { position: line.position },
+              data: { discountAmount: line.discountAmount, finalAmount: line.finalAmount, depositAmount: line.depositAmount },
+            })),
           },
-        }),
+        },
         // Con la persona, como el `create` de arriba: sin esto, aplicar un paquete o
         // un código deja la reserva sin `professional` en la respuesta y la
         // confirmación se queda sin poder decir quién atiende — justo en el camino
@@ -791,7 +831,7 @@ async function _createBooking(data: {
       professional: { name: string } | null
     }
 
-    await fireBookingNotifications(business, bookingForNotification, service.name, bankTransferAccount)
+    await fireBookingNotifications(business, bookingForNotification, bookingServiceName({ service, serviceLines: lines }), bankTransferAccount)
 
     logger.booking.created(booking.id, businessId, booking.customer?.email ?? undefined)
 
@@ -809,11 +849,16 @@ async function _createBooking(data: {
     // recién nació, pero nada garantiza que sea del horario que este request pidió
     // (dos envíos concurrentes con la misma key y distinto horario caen acá).
     const prismaError = e as { code?: string; meta?: { target?: string[] } }
+    const target = prismaError.meta?.target
+    const idempotencyCollision = prismaError.code === 'P2002' && Array.isArray(target) &&
+      (target.includes('businessId_idempotencyKey') || (target.includes('businessId') && target.includes('idempotencyKey')))
+    // The business/day lock can detect the winning request as a slot conflict
+    // before the unique insert. Once the losing transaction releases its locks,
+    // use the same verified replay path; never create another booking.
+    const slotCollision = !!data.idempotencyKey && e instanceof UserError && e.message === SLOT_UNAVAILABLE_MESSAGE
     if (
-      prismaError.code === 'P2002' &&
       data.idempotencyKey &&
-      Array.isArray(prismaError.meta?.target) &&
-      prismaError.meta.target.includes('businessId_idempotencyKey')
+      (idempotencyCollision || slotCollision)
     ) {
       const existing = await prisma.booking.findUnique({
         where: {
@@ -872,6 +917,7 @@ async function _updateBookingStatus(id: string, status: BookingStatus) {
     include: {
       customer: { select: { name: true, email: true } },
       service: { select: { name: true } },
+      serviceLines: { select: { position: true, name: true } },
       business: { select: { name: true, timezone: true } },
     },
   })
@@ -1001,7 +1047,7 @@ async function _updateBookingStatus(id: string, status: BookingStatus) {
         businessReplyToEmail,
         customerName: existing.customer.name,
         customerEmail: existing.customer.email,
-        serviceName: existing.service.name,
+        serviceName: bookingServiceName(existing),
         startDateTime: existing.startDateTime,
         businessTimezone: existing.business.timezone || 'America/Santiago',
         calendar,
@@ -1117,6 +1163,7 @@ export async function getBookingsByRange(start: Date, end: Date) {
     include: {
       service: true,
       customer: true,
+      serviceLines: { select: { position: true, name: true } },
       // Para el calendario: el nombre va en el chip y en el drawer, y el
       // `professionalId` escalar (que el include trae solo) alimenta el filtro
       // por persona de la página.
@@ -1134,12 +1181,13 @@ export async function getBookingsByRange(start: Date, end: Date) {
 }
 
 const createBookingFromDashboardSchema = z.object({
-  serviceId: z.string().min(1),
+  serviceId: z.string().min(1).optional(),
+  serviceIds: z.array(z.string().min(1).max(128)).min(1).max(10).optional(),
   customerName: z.string().min(1).max(100),
   customerPhone: z.string().min(8).max(20),
   customerEmail: z.string().email().optional().or(z.literal('')),
   customerBirthDate: z.string().optional().or(z.literal(''))
-    .refine((v) => !v || isValidBirthDateString(v), 'Fecha de cumpleaños inválida'),
+    .refine((v) => !v || isValidBirthDateString(v), 'Fecha de nacimiento inválida'),
   startDateTime: z.date(),
   internalNotes: z.string().max(500).optional(),
   markDepositPaid: z.boolean().optional().default(false),
@@ -1163,7 +1211,8 @@ const PAYMENT_METHOD_MAP: Record<string, string> = {
 }
 
 async function _createBookingFromDashboard(data: {
-  serviceId: string
+  serviceId?: string
+  serviceIds?: string[]
   customerName: string
   customerPhone: string
   customerEmail?: string
@@ -1193,10 +1242,11 @@ async function _createBookingFromDashboard(data: {
 
   // Misma derivación que el flujo público (el formulario del panel ni siquiera
   // pregunta la modalidad cuando el servicio tiene una sola).
-  const { service, modality, serviceAddress, meetingUrl, totalPrice, depositRequired, finalAmount, endDateTime } =
+  const { service, serviceIds, lines, modality, serviceAddress, meetingUrl, totalPrice, depositRequired, finalAmount, endDateTime } =
     await resolveBookingDraft({
       businessId,
       serviceId: data.serviceId,
+      serviceIds: data.serviceIds,
       startDateTime: data.startDateTime,
       modality: data.modality,
       serviceAddress: data.serviceAddress,
@@ -1208,7 +1258,7 @@ async function _createBookingFromDashboard(data: {
   // existe hasta que la transacción la elija, con este mismo filtro.
   const professional = data.professional ?? NO_PROFESSIONAL
   if (professional.kind === 'person') {
-    await assertProfessionalOffersService(prisma, businessId, professional.id, data.serviceId, modality)
+    await assertProfessionalOffersService(prisma, businessId, professional.id, serviceIds, modality)
   }
 
   // Derive payment mode: new explicit mode takes precedence, fallback to legacy markDepositPaid
@@ -1253,7 +1303,8 @@ async function _createBookingFromDashboard(data: {
     const professionalId = await assertSlotAndResolveProfessional({
       tx,
       businessId,
-      serviceId: data.serviceId,
+      serviceId: service.id,
+      serviceIds,
       startDateTime: data.startDateTime,
       endDateTime,
       timezone: business.timezone || 'America/Santiago',
@@ -1286,7 +1337,8 @@ async function _createBookingFromDashboard(data: {
     const newBooking = await tx.booking.create({
       data: {
         businessId,
-        serviceId: data.serviceId,
+        serviceId: service.id,
+        serviceLines: { create: lines },
         customerId: customer.id,
         professionalId,
         startDateTime: data.startDateTime,
@@ -1315,7 +1367,8 @@ async function _createBookingFromDashboard(data: {
     const discountRes = await applyBookingDiscountInTx(tx, {
       businessId,
       customerId: customer.id,
-      serviceId: data.serviceId,
+      serviceId: service.id,
+      ...(lines.length > 1 ? { lines } : {}),
       bookingId: newBooking.id,
       totalPrice,
       promotionCode: parsed.data.promotionCode,
@@ -1326,8 +1379,9 @@ async function _createBookingFromDashboard(data: {
 
     // Montos efectivos: descontados cuando aplicó una promo, precio total si no.
     const discountAmount = discountRes?.discountAmount ?? 0
-    const effFinal = service.price - discountAmount
-    const effDeposit = Math.min(service.depositAmount, effFinal)
+    const discountedLines = allocateLineDiscount(lines, discountAmount, discountRes?.eligibleServiceIds ?? [service.id])
+    const effFinal = totalPrice - discountAmount
+    const effDeposit = discountedLines.reduce((sum, line) => sum + line.depositAmount, 0)
 
     // Si aplicó una promo, persistir el descuento y recalcular estado/montos con
     // los valores EFECTIVOS ANTES de las ramas de pago, porque applyApprovedPayment
@@ -1346,6 +1400,12 @@ async function _createBookingFromDashboard(data: {
         where: { id: newBooking.id },
         data: {
           discountAmount,
+          serviceLines: {
+            updateMany: discountedLines.map(line => ({
+              where: { position: line.position },
+              data: { discountAmount: line.discountAmount, finalAmount: line.finalAmount, depositAmount: line.depositAmount },
+            })),
+          },
           finalAmount: effFinal,
           depositRequired: effDeposit,
           remainingBalance: effFinal,
@@ -1442,7 +1502,7 @@ async function _cancelBooking(bookingId: string, reason?: string) {
 
   const booking = await prisma.booking.findFirst({
     where: { id: bookingId, businessId },
-    include: { service: true, customer: true },
+    include: { service: true, serviceLines: { select: { position: true, name: true } }, customer: true },
   })
 
   if (!booking) {
@@ -1473,7 +1533,7 @@ async function _cancelBooking(bookingId: string, reason?: string) {
         businessReplyToEmail,
         customerName: booking.customer!.name,
         customerEmail: booking.customer!.email,
-        serviceName: booking.service!.name,
+        serviceName: bookingServiceName(booking),
         startDateTime: booking.startDateTime,
         businessTimezone: business.timezone || 'America/Santiago',
         // Rechazar una solicitud es cancelarla con motivo: sin esto la clienta
@@ -1555,7 +1615,7 @@ async function _rescheduleBooking(bookingId: string, newStartDateTime: Date) {
           createdAt: freshState.createdAt,
         },
         newStartDateTime,
-        durationMinutes: service.durationMinutes,
+        durationMinutes: bookingDurationMinutes(booking),
         timezone: business.timezone || 'America/Santiago',
         // Reagendar desde el dashboard no exige anticipación (la dueña manda)
         leadTimeMinutes: 0,
@@ -1604,7 +1664,7 @@ async function _rescheduleBooking(bookingId: string, newStartDateTime: Date) {
         customerName: booking.customer!.name,
         customerEmail: booking.customer!.email,
         customerPhone: booking.customer!.phone,
-        serviceName: service.name,
+        serviceName: bookingServiceName(booking),
         // Reprogramar conserva la persona, así que el nombre leído antes de la
         // tx sigue siendo el que atiende.
         professionalName: booking.professional?.name ?? null,
@@ -1639,7 +1699,7 @@ async function _getReassignTargets(bookingId: string) {
 
   const booking = await prisma.booking.findFirst({
     where: { id: bookingId, businessId },
-    select: { serviceId: true, modality: true, professionalId: true },
+    select: { serviceId: true, serviceLines: { select: { position: true, serviceId: true } }, modality: true, professionalId: true },
   })
   if (!booking) {
     throw new UserError('Reserva no encontrada')
@@ -1648,7 +1708,7 @@ async function _getReassignTargets(bookingId: string) {
   return prisma.professional.findMany({
     where: {
       ...activeProfessionalWhere(businessId),
-      ...professionalEligibilityWhere(booking.serviceId, booking.modality),
+      ...professionalEligibilityWhere(bookingServiceIds(booking), booking.modality),
       ...(booking.professionalId ? { NOT: { id: booking.professionalId } } : {}),
     },
     select: { id: true, name: true },
@@ -1678,6 +1738,7 @@ async function _reassignBooking(bookingId: string, professionalId: string) {
         id: true,
         businessId: true,
         serviceId: true,
+        serviceLines: { select: { position: true, serviceId: true } },
         modality: true,
         status: true,
         startDateTime: true,
@@ -1704,7 +1765,7 @@ async function _reassignBooking(bookingId: string, professionalId: string) {
   // que el caller no use el crudo. Si la autorización pasó, la persona existe;
   // el `!target` sólo puede ser un id que la normalización cambió, y se trata
   // igual que no elegible.
-  const normalizedId = await assertProfessionalOffersService(prisma, businessId, professionalId, booking.serviceId, booking.modality)
+  const normalizedId = await assertProfessionalOffersService(prisma, businessId, professionalId, bookingServiceIds(booking), booking.modality)
   if (!target) {
     throw new UserError(PROFESSIONAL_UNAVAILABLE_MESSAGE)
   }

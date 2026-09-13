@@ -222,6 +222,13 @@ describe('declareBalanceTransfer', () => {
   })
 })
 
+async function addHistoricalLines(bookingId: string) {
+  await prisma.bookingService.createMany({ data: ['Corte histórico', 'Barba histórica'].map((name, position) => ({
+    bookingId, serviceId: `historic-${position}`, position, name, durationMinutes: 20,
+    price: 10000, depositAmount: 0, discountAmount: 0, finalAmount: 10000,
+  })) })
+}
+
 describe('confirmBankTransfer saldo', () => {
   async function declaredBalance() {
     const seeded = await seedConfirmedWithBalance()
@@ -235,6 +242,7 @@ describe('confirmBankTransfer saldo', () => {
 
   it('sobre confirmed → fully_paid, ledger final_payment, status intacto', async () => {
     const s = await declaredBalance()
+    await addHistoricalLines(s.bookingId)
     const notif = await import('@/lib/notifications')
     vi.mocked(notif.sendBalanceTransferVerifiedToCustomer).mockClear()
     const { confirmBankTransfer } = await import('@/server/actions/bank-transfer-verify')
@@ -246,6 +254,7 @@ describe('confirmBankTransfer saldo', () => {
     const ledger = await prisma.ledgerEntry.findFirst({ where: { paymentId: s.balancePaymentId } })
     expect(ledger?.type).toBe('final_payment_paid')
     expect(notif.sendBalanceTransferVerifiedToCustomer).toHaveBeenCalledTimes(1)
+    expect(notif.sendBalanceTransferVerifiedToCustomer).toHaveBeenCalledWith(expect.objectContaining({ serviceName: 'Corte histórico + Barba histórica' }))
   })
 
   it('sobre completed → también verifica (allowCompleted)', async () => {
@@ -284,6 +293,7 @@ describe('confirmBankTransfer saldo', () => {
 describe('rejectBankTransfer saldo', () => {
   it('rechaza el payment, NO cancela la reserva, manda el email de SALDO, y se puede re-declarar', async () => {
     const seeded = await seedConfirmedWithBalance()
+    await addHistoricalLines(seeded.bookingId)
     const { declareBalanceTransfer } = await import('@/server/actions/bank-transfer-public')
     await unwrap(declareBalanceTransfer(seeded.bookingId))
     const p = await prisma.payment.findFirstOrThrow({
@@ -297,6 +307,7 @@ describe('rejectBankTransfer saldo', () => {
     expect(b.status).toBe('confirmed') // NO cancelada
     expect((await prisma.payment.findUniqueOrThrow({ where: { id: p.id } })).status).toBe('rejected')
     expect(notif.sendBalanceTransferRejectedToCustomer).toHaveBeenCalledTimes(1)
+    expect(notif.sendBalanceTransferRejectedToCustomer).toHaveBeenCalledWith(expect.objectContaining({ serviceName: 'Corte histórico + Barba histórica' }))
     await unwrap(declareBalanceTransfer(seeded.bookingId)) // reactiva
     expect((await prisma.payment.findUniqueOrThrow({ where: { id: p.id } })).status).toBe('pending')
   })

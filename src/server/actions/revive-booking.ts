@@ -6,6 +6,7 @@
 // (bookings.ts) queda en [] a propósito (updateBookingStatus no sabe
 // re-validar cupo).
 
+import { bookingServiceName } from '@/lib/bookings/service-lines'
 import { addHours } from 'date-fns'
 import { prisma } from '@/lib/db'
 import { requireBusinessRole } from '@/lib/auth/server'
@@ -66,7 +67,7 @@ async function _reviveBooking(bookingId: string, mode: 'confirm' | 'reopen'): Pr
         include: {
           // Solo lo que consume el reopen/email; el confirm usa los escalares.
           customer: { select: { name: true, email: true } },
-          service: { select: { name: true } },
+          service: { select: { name: true } }, serviceLines: { select: { position: true, name: true } },
           business: { select: { bankTransferAccount: true } },
         },
       })
@@ -170,7 +171,7 @@ async function _reviveBooking(bookingId: string, mode: 'confirm' | 'reopen'): Pr
           businessReplyToEmail: replyTo,
           customerName: customer.name,
           customerEmail,
-          serviceName: revived.service?.name ?? 'servicio',
+          serviceName: bookingServiceName(revived),
           bookingNumber: revived.bookingNumber,
           depositAmount: Math.min(revived.depositRequired, revived.remainingBalance),
           businessCurrency: business.currency || 'CLP',

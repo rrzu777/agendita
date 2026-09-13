@@ -1,3 +1,4 @@
+import { bookingServiceName } from '@/lib/bookings/service-lines'
 import { prisma } from '@/lib/db'
 import { BookingStatus, type Prisma, type PrismaClient } from '@prisma/client'
 import { releaseRedemptionsOfExpiredBookings } from '@/lib/promotions/release'
@@ -47,7 +48,7 @@ async function notifyExpiredCustomers(
 ): Promise<void> {
   const toNotify = await db.booking.findMany({
     where: args.where,
-    include: { customer: true, service: true, business: true },
+    include: { customer: true, service: true, serviceLines: { select: { position: true, name: true } }, business: true },
   })
   if (toNotify.length === 0) return
 
@@ -69,7 +70,7 @@ async function notifyExpiredCustomers(
             businessReplyToEmail: args.replyToCache.get(b.businessId) ?? null,
             customerName: b.customer!.name,
             customerEmail: b.customer!.email!,
-            serviceName: b.service?.name ?? 'servicio',
+            serviceName: bookingServiceName(b),
             startDateTime: b.startDateTime,
             bookingNumber: b.bookingNumber,
           }),
@@ -117,7 +118,7 @@ async function expireUnansweredRequests(
   // respuesta que ya no va a llegar, y el cupo se liberó sin que se entere.
   const toNotify = await db.booking.findMany({
     where: { id: { in: ids }, status: BookingStatus.expired },
-    include: { customer: true, service: true, business: true },
+    include: { customer: true, service: true, serviceLines: { select: { position: true, name: true } }, business: true },
   })
   const replyToByBiz = new Map<string, string | null>()
   await Promise.all(
@@ -135,7 +136,7 @@ async function expireUnansweredRequests(
             businessReplyToEmail: replyToByBiz.get(b.businessId) ?? null,
             customerName: b.customer!.name,
             customerEmail: b.customer!.email!,
-            serviceName: b.service?.name ?? 'servicio',
+            serviceName: bookingServiceName(b),
             startDateTime: b.startDateTime,
             businessTimezone: b.business.timezone || 'America/Santiago',
             reason: UNANSWERED_REASON,

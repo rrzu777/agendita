@@ -1,7 +1,7 @@
 import 'server-only'
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
-import { analyticsEventSchema, eventScope, type AcquisitionSource } from '@/lib/analytics/contracts'
+import { analyticsEventSchema, eventScope, selectionServiceIds, type AcquisitionSource } from '@/lib/analytics/contracts'
 import { reduceFunnelAttempt } from '@/lib/analytics/funnel'
 import { aggregateFlowBreakdowns } from '@/lib/analytics/flow-breakdowns'
 import type { AttemptProjection, FlowBreakdownsReport, ObservedEvent } from '@/lib/analytics/report-types'
@@ -51,7 +51,7 @@ export async function readOwnerAnalyticsFlowBreakdowns(input: FlowReadInput, now
       })
       if (sessions.length > SOURCE_LIMIT) return unavailable('limit_exceeded')
       const attempts = await tx.bookingFunnelAttempt.findMany({ where,
-        select: { id: true, businessId: true, sessionId: true, startedAt: true, conversionDeadlineAt: true, entryKind: true, definitionVersion: true, businessTimeZone: true, cohortLocalDate: true, channel: true, normalizationVersion: true, acquisitionLinkId: true, knownCaptureGap: true, acceptedEventCount: true, retentionExpiresAt: true, consentVersion: true },
+        select: { id: true, businessId: true, sessionId: true, startedAt: true, conversionDeadlineAt: true, entryKind: true, definitionVersion: true, flowVersion: true, businessTimeZone: true, cohortLocalDate: true, channel: true, normalizationVersion: true, acquisitionLinkId: true, knownCaptureGap: true, acceptedEventCount: true, retentionExpiresAt: true, consentVersion: true },
         orderBy: { id: 'asc' }, take: SOURCE_LIMIT + 1,
       })
       if (sessions.length + attempts.length > SOURCE_LIMIT) return unavailable('limit_exceeded')
@@ -85,7 +85,7 @@ export async function readOwnerAnalyticsFlowBreakdowns(input: FlowReadInput, now
             observed.push({ event: parsed.data, receivedAt: e.receivedAt })
           }
           projections.push(reduceFunnelAttempt({
-            attempt: { ...a, cohortLocalDate: a.cohortLocalDate.toISOString().slice(0, 10), acquisition: { channel: a.channel, acquisitionLinkId: a.acquisitionLinkId, normalizationVersion: 1 } },
+            attempt: { ...a, flowVersion: a.flowVersion === 2 ? 2 : 1, cohortLocalDate: a.cohortLocalDate.toISOString().slice(0, 10), acquisition: { channel: a.channel, acquisitionLinkId: a.acquisitionLinkId, normalizationVersion: 1 } },
             events: observed, bookings: [], now,
           }))
         }
@@ -93,7 +93,7 @@ export async function readOwnerAnalyticsFlowBreakdowns(input: FlowReadInput, now
       // Validate EVERY source before applying the independent, immutable filters.
       const selected = projections.filter(p => (!input.channel || p.attempt.acquisition.channel === input.channel)
         && (!input.acquisitionLinkId || p.attempt.acquisition.acquisitionLinkId === input.acquisitionLinkId)
-        && (!input.serviceId || p.finalContext?.serviceId === input.serviceId))
+        && (!input.serviceId || (p.finalContext ? selectionServiceIds(p.finalContext).includes(input.serviceId) : false)))
       return { status: selected.length ? 'available' : 'empty', from, to, cutoffAt: now.toISOString(), scope, timezones: [...timezones].sort(), groups: aggregateFlowBreakdowns(selected) }
     }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead, maxWait: 5000, timeout: 15000 })
   } catch {

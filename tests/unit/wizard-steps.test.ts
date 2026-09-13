@@ -6,12 +6,12 @@ const SIN_EQUIPO = stepsFor(null)
 const CON_EQUIPO = stepsFor('Barbero')
 
 describe('la lista de pasos', () => {
-  it('sin equipo es la de siempre, seis pasos', () => {
-    expect(SIN_EQUIPO.map((s) => s.key)).toEqual(['service', 'date', 'time', 'customer', 'payment', 'confirmation'])
+  it('sin equipo es la de siempre, cinco pasos', () => {
+    expect(SIN_EQUIPO.map((s) => s.key)).toEqual(['service', 'date', 'customer', 'payment', 'confirmation'])
   })
 
   it('con equipo mete el paso entre servicio y fecha, con el oficio del rubro', () => {
-    expect(CON_EQUIPO.map((s) => s.key)).toEqual(['service', 'professional', 'date', 'time', 'customer', 'payment', 'confirmation'])
+    expect(CON_EQUIPO.map((s) => s.key)).toEqual(['service', 'professional', 'date', 'customer', 'payment', 'confirmation'])
     expect(CON_EQUIPO[1].label).toBe('Barbero')
   })
 })
@@ -39,7 +39,7 @@ describe('a dónde vuelve quien se fue a crear su cuenta', () => {
 
   it('al paso más lejano que el estado sostiene', () => {
     expect(entryStepAfterRestore(base, SIN_EQUIPO)).toBe('customer')
-    expect(entryStepAfterRestore({ ...base, timeSlot: null }, SIN_EQUIPO)).toBe('time')
+    expect(entryStepAfterRestore({ ...base, timeSlot: null }, SIN_EQUIPO)).toBe('date')
     expect(entryStepAfterRestore({ ...base, timeSlot: null, date: null }, SIN_EQUIPO)).toBe('date')
   })
 

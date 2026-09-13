@@ -16,9 +16,15 @@ import { addMinutes } from 'date-fns'
 import { prisma } from '@/lib/db'
 import { UserError } from '@/lib/actions/result'
 import { resolveBookingModality, resolveServiceAddress } from '@/lib/services/modality'
+import { normalizeServiceSelection, resolveSelectedServices } from './selection'
+import { snapshotServiceLines, type ServiceLineSnapshot } from './service-lines'
 
 export interface BookingDraft {
   service: Service
+  services: Service[]
+  serviceIds: string[]
+  lines: ServiceLineSnapshot[]
+  durationMinutes: number
   modality: ServiceModality
   serviceAddress: string | null
   meetingUrl: string | null
@@ -39,7 +45,8 @@ export interface BookingDraft {
  */
 export async function resolveBookingDraft(args: {
   businessId: string
-  serviceId: string
+  serviceId?: string
+  serviceIds?: string[]
   startDateTime: Date
   /** Elección del cliente. Se ignora cuando el servicio tiene una sola modalidad. */
   modality?: ServiceModality
@@ -47,14 +54,21 @@ export async function resolveBookingDraft(args: {
   /** `Business.defaultMeetingUrl`. Se copia a la reserva, no se lee en vivo. */
   defaultMeetingUrl: string | null
 }): Promise<BookingDraft> {
-  const service = await prisma.service.findFirst({
-    where: { id: args.serviceId, businessId: args.businessId, isActive: true },
-  })
+  const serviceIds = normalizeServiceSelection(args)
+  // Preserve the legacy single-row read; multi selections are validated in full.
+  const rows = serviceIds.length === 1
+    ? [await prisma.service.findFirst({ where: { id: serviceIds[0], businessId: args.businessId, isActive: true } })].filter((s): s is Service => s !== null)
+    : await prisma.service.findMany({ where: { id: { in: serviceIds }, businessId: args.businessId, isActive: true } })
+  const service = rows.find(s => s.id === serviceIds[0])
   if (!service) {
     throw new UserError('Servicio no disponible')
   }
 
-  const modality = resolveBookingModality(service.modalities, args.modality)
+  const selection = serviceIds.length > 1 ? resolveSelectedServices(args.businessId, serviceIds, rows) : {
+    services: [service], modalities: service.modalities, totalPrice: service.price,
+    depositRequired: service.depositAmount, durationMinutes: service.durationMinutes,
+  }
+  const modality = resolveBookingModality(selection.modalities, args.modality)
   const serviceAddress = resolveServiceAddress(modality, args.serviceAddress)
   // La sala se copia AHORA: si el negocio la cambia después, las citas ya
   // avisadas conservan el link que la clienta recibió por email.
@@ -62,12 +76,16 @@ export async function resolveBookingDraft(args: {
 
   return {
     service,
+    services: selection.services,
+    serviceIds,
+    lines: snapshotServiceLines(selection.services),
+    durationMinutes: selection.durationMinutes,
     modality,
     serviceAddress,
     meetingUrl,
-    totalPrice: service.price,
-    depositRequired: service.depositAmount,
-    finalAmount: service.price,
-    endDateTime: addMinutes(args.startDateTime, service.durationMinutes),
+    totalPrice: selection.totalPrice,
+    depositRequired: selection.depositRequired,
+    finalAmount: selection.totalPrice,
+    endDateTime: addMinutes(args.startDateTime, selection.durationMinutes),
   }
 }

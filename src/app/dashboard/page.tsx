@@ -1,3 +1,4 @@
+import { bookingServiceName } from '@/lib/bookings/service-lines'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { DashboardHeader } from '@/components/dashboard/header'
@@ -177,7 +178,7 @@ export default async function DashboardPage() {
                     </div>
                     <div>
                       <h3 className="text-xl font-semibold text-primary">{booking.customer?.name || v.Client}</h3>
-                      <p className="text-sm font-semibold uppercase tracking-[0.1em] text-muted-foreground">{booking.service?.name || 'Servicio'}</p>
+                      <p className="text-sm font-semibold uppercase tracking-[0.1em] text-muted-foreground">{bookingServiceName(booking)}</p>
                     </div>
                   </div>
                   <div className="flex flex-col items-start gap-1 md:items-end">

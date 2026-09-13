@@ -1,7 +1,8 @@
 import type { Service, ServiceModality } from '@prisma/client'
-import { sortModalities, requiresServiceAddress } from '@/lib/services/modality'
-import { parseProfessionalPick, professionalChoice, professionalFields, samePick, type FunnelProfessional, type ProfessionalPick } from '@/lib/professionals/eligible'
+import { requiresServiceAddress } from '@/lib/services/modality'
+import { parseProfessionalPick, professionalChoiceForServices, professionalFields, samePick, type FunnelProfessional, type ProfessionalPick } from '@/lib/professionals/eligible'
 import type { BookingData } from '@/components/booking/wizard'
+import { wizardServiceFields, wizardServiceIds } from './wizard-selection'
 
 /** Persistencia del wizard para el viaje a /ingresar y de vuelta (spec CTA funnel).
  *  Helpers puros (testeables): el wizard hace el sessionStorage.get/set. */
@@ -15,6 +16,7 @@ export function wizardStorageKey(businessId: string): string {
 interface SavedState {
   savedAt: number
   serviceId: string
+  serviceIds?: string[]
   date: string | null
   timeSlotStart: string | null
   timeSlotEnd: string | null
@@ -36,6 +38,7 @@ export function serializeWizardState(data: BookingData, now: number = Date.now()
   const saved: SavedState = {
     savedAt: now,
     serviceId: data.serviceId,
+    serviceIds: wizardServiceIds(data),
     date: data.date ? data.date.toISOString() : null,
     timeSlotStart: data.timeSlot ? data.timeSlot.start.toISOString() : null,
     timeSlotEnd: data.timeSlot ? data.timeSlot.end.toISOString() : null,
@@ -72,10 +75,12 @@ export function restoreWizardState(
   }
   if (typeof saved?.savedAt !== 'number' || now - saved.savedAt > TTL_MS) return null
 
-  const service = services.find((s) => s.id === saved.serviceId)
-  if (!service || !service.isActive) return null
-
-  const modalities = sortModalities(service.modalities)
+  let selection: ReturnType<typeof wizardServiceFields>
+  try {
+    selection = wizardServiceFields(saved.serviceIds ?? [saved.serviceId], services)
+    if (!selection.serviceId || selection.serviceId !== saved.serviceId) return null
+  } catch { return null }
+  const modalities = selection.serviceModalities
   // La modalidad guardada se re-valida contra el servicio ACTUAL, igual que el
   // resto de los campos denormalizados: si la dueña dejó de ofrecer domicilio
   // mientras la clienta iba a /ingresar, la elección vieja no sobrevive.
@@ -95,10 +100,9 @@ export function restoreWizardState(
   // escribía un `professionalId` suelto: el TTL es de 30 minutos, así que sólo pasa
   // durante un deploy, y volver a preguntar es más barato que adivinar.
   const guardada = parseProfessionalPick(saved.professional)
-  const persona = professionalFields(
-    professionalChoice(professionals, service.id, modality),
-    guardada,
-  )
+  const choice = professionalChoiceForServices(professionals, selection.serviceIds, modality)
+  if (choice.kind === 'unavailable') return null
+  const persona = professionalFields(choice, guardada)
 
   // Si la reserva ya no va a nombre de lo que la clienta eligió, el horario guardado
   // tampoco sirve: se calculó contra ESA agenda. Se suelta acá y no en el wizard
@@ -110,15 +114,13 @@ export function restoreWizardState(
   // "cualquiera" que sigue siendo "cualquiera" sí la conserva: la unión de horarios
   // no cambió por volver de /ingresar.
   const perdioLaPersona = guardada.kind !== 'none' && !samePick(persona.professional, guardada)
+  const start = saved.timeSlotStart ? new Date(saved.timeSlotStart) : null
+  const end = saved.timeSlotEnd ? new Date(saved.timeSlotEnd) : null
+  const validSlot = !!start && !!end && Number.isFinite(start.getTime()) && Number.isFinite(end.getTime()) && end.getTime() - start.getTime() === selection.serviceDuration * 60000
+  const lostSlot = perdioLaPersona || !validSlot || saved.serviceModality !== modality
 
   return {
-    serviceId: service.id,
-    serviceName: service.name,
-    servicePrice: service.price,
-    serviceDuration: service.durationMinutes,
-    serviceDeposit: service.depositAmount,
-    serviceColor: service.pastelColor || '',
-    serviceModalities: modalities,
+    ...selection,
     serviceModality: modality,
     // Se cuelga de la modalidad RESUELTA, no de la guardada: si el domicilio se
     // descartó arriba, la dirección tiene que irse con él o el formulario queda
@@ -126,15 +128,15 @@ export function restoreWizardState(
     serviceAddress: modality && requiresServiceAddress(modality) ? (saved.serviceAddress ?? '') : '',
     ...persona,
     date: saved.date ? new Date(saved.date) : null,
-    timeSlot: !perdioLaPersona && saved.timeSlotStart && saved.timeSlotEnd
-      ? { start: new Date(saved.timeSlotStart), end: new Date(saved.timeSlotEnd) }
+    timeSlot: !lostSlot && start && end
+      ? { start, end }
       : null,
     customerName: saved.customerName ?? '',
     customerPhone: saved.customerPhone ?? '',
     customerEmail: saved.customerEmail ?? '',
     customerBirthDate: saved.customerBirthDate ?? '',
     customerNotes: saved.customerNotes ?? '',
-    idempotencyKey: saved.idempotencyKey ?? null,
+    idempotencyKey: lostSlot ? null : saved.idempotencyKey ?? null,
     ...(saved.promotionCode ? { promotionCode: saved.promotionCode } : {}),
   }
 }

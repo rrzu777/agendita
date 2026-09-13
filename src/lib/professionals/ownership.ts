@@ -136,7 +136,7 @@ export async function assertProfessionalOffersService(
   client: Db,
   businessId: string,
   professionalId: string,
-  serviceId: string,
+  serviceId: string | string[],
   modality: ServiceModality,
 ): Promise<string> {
   const id = normalizeProfessionalId(professionalId)

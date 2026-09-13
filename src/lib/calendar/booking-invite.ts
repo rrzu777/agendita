@@ -35,6 +35,7 @@ const EVENT_SOURCE_SELECT = {
   serviceAddress: true,
   meetingUrl: true,
   service: { select: { name: true } },
+  serviceLines: { select: { position: true, name: true } },
   professional: { select: { name: true } },
   business: { select: { name: true, slug: true, subdomain: true, addressText: true } },
 } as const

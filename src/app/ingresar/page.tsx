@@ -3,6 +3,7 @@ import type { Metadata } from 'next'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { signInWithGoogle } from '@/lib/auth/actions'
 import { GoogleButton } from './google-button'
+import { sanitizeNext } from '@/lib/auth/sanitize-next'
 
 export const metadata: Metadata = { title: 'Ingresar — Agendita' }
 
@@ -14,6 +15,8 @@ async function signInWithGoogleAction(next: string | null) {
 export default async function IngresarPage({ searchParams }: { searchParams: Promise<{ next?: string; error?: string }> }) {
   const { next, error } = await searchParams
   const action = signInWithGoogleAction.bind(null, next ?? null)
+  const safeNext = sanitizeNext(next ?? null, '/mi')
+  const bookingReturn = /^\/ir\/[A-Za-z0-9_-]+(?:\?|$)/.test(safeNext) ? safeNext : null
 
   return (
     <main className="studio-shell flex items-center justify-center px-4 py-12">
@@ -38,6 +41,11 @@ export default async function IngresarPage({ searchParams }: { searchParams: Pro
             <form action={action}>
               <GoogleButton />
             </form>
+            {bookingReturn && (
+              <Link href={bookingReturn} prefetch={false} className="mt-5 block rounded-full border border-border px-4 py-3 text-center font-semibold text-primary hover:bg-secondary">
+                Volver a mi reserva sin iniciar sesión
+              </Link>
+            )}
             <div className="my-8 h-px bg-border/50" />
             <p className="text-center text-base text-muted-foreground">
               ¿Administras un negocio?{' '}

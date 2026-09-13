@@ -146,6 +146,14 @@ describe('initiatePayment - amount guards', () => {
     if (res.ok) throw new Error('expected error result')
     expect(res.error).toBe('No se requiere pago para esta reserva')
   })
+  it('bounds the provider summary for a multi-service booking without trusting browser amounts', async () => {
+    setPayableMercadoPagoBooking()
+    const booking = await mockPrisma.booking.findUnique()
+    mockPrisma.booking.findUnique.mockResolvedValue({ ...booking, serviceLines: Array.from({ length: 3 }, (_, position) => ({ position, name: 'Servicio largo '.repeat(7) })) })
+    expect((await initiatePayment({ bookingId: 'booking-mp' })).ok).toBe(true)
+    expect(createMpPreferenceForPayment).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ description: expect.any(String), amount: 5000 }))
+    expect(createMpPreferenceForPayment.mock.calls.at(-1)![1].description.length).toBeLessThanOrEqual(255)
+  })
 
   it('rejects when depositRequired is positive but booking is fully_paid', async () => {
     mockPrisma.booking.findUnique.mockResolvedValue({

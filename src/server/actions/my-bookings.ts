@@ -2,6 +2,7 @@
 
 // LANDMINE: módulo 'use server' — SOLO exports async. Nada de constantes/tipos exportados;
 // cada export es un endpoint público invocable, así que cada uno hace su propio requireUser().
+import { bookingServiceName, bookingDurationMinutes } from '@/lib/bookings/service-lines'
 import { revalidatePath } from 'next/cache'
 import { prisma } from '@/lib/db'
 import { requireUser } from '@/lib/auth/server'
@@ -41,10 +42,11 @@ async function _cancelMyBooking(bookingId: string) {
       internalNotes: true,
       bookingNumber: true,
       startDateTime: true,
+      endDateTime: true,
       status: true,
       cancellationCutoffHours: true,
       cancellationPolicySnapshot: true,
-      service: { select: { name: true } },
+      service: { select: { name: true } }, serviceLines: { select: { position: true, name: true } },
       professional: { select: { name: true } },
       customer: { select: { name: true, email: true } },
       business: {
@@ -72,7 +74,7 @@ async function _cancelMyBooking(bookingId: string) {
       businessCategory: booking.business.category,
       businessTimezone: booking.business.timezone || 'America/Santiago',
       customerName: booking.customer.name,
-      serviceName: booking.service.name,
+      serviceName: bookingServiceName(booking),
       professionalName: booking.professional?.name ?? null,
       bookingNumber: booking.bookingNumber,
       change: { kind: 'cancelled' },
@@ -92,7 +94,7 @@ async function _cancelMyBooking(bookingId: string) {
         businessReplyToEmail,
         customerName: booking.customer.name,
         customerEmail: booking.customer.email!,
-        serviceName: booking.service.name,
+        serviceName: bookingServiceName(booking),
         startDateTime: booking.startDateTime,
         businessTimezone: booking.business.timezone || 'America/Santiago',
         calendar,
@@ -129,6 +131,7 @@ async function _rescheduleMyBooking(bookingId: string, newStartDateTime: Date) {
       internalNotes: true,
       bookingNumber: true,
       startDateTime: true,
+      endDateTime: true,
       status: true,
       paymentStatus: true,
       holdExpiresAt: true,
@@ -139,7 +142,7 @@ async function _rescheduleMyBooking(bookingId: string, newStartDateTime: Date) {
       meetingUrl: true,
       cancellationCutoffHours: true,
       cancellationPolicySnapshot: true,
-      service: { select: { name: true, durationMinutes: true } },
+      service: { select: { name: true, durationMinutes: true } }, serviceLines: { select: { position: true, name: true, serviceId: true } },
       professional: { select: { name: true } },
       customer: { select: { name: true, email: true, phone: true } },
       business: {
@@ -183,7 +186,7 @@ async function _rescheduleMyBooking(bookingId: string, newStartDateTime: Date) {
       await rescheduleBookingInTx(tx, {
         booking,
         newStartDateTime,
-        durationMinutes: booking.service.durationMinutes,
+        durationMinutes: bookingDurationMinutes(booking),
         timezone: booking.business.timezone || 'America/Santiago',
         // sin leadTimeMinutes → default del funnel público
         rescheduledBy: 'customer',
@@ -212,7 +215,7 @@ async function _rescheduleMyBooking(bookingId: string, newStartDateTime: Date) {
       businessCategory: booking.business.category,
       businessTimezone: booking.business.timezone || 'America/Santiago',
       customerName: booking.customer.name,
-      serviceName: booking.service.name,
+      serviceName: bookingServiceName(booking),
       professionalName: booking.professional?.name ?? null,
       bookingNumber: booking.bookingNumber,
       change: { kind: 'rescheduled', previousStartDateTime, newStartDateTime },
@@ -240,7 +243,7 @@ async function _rescheduleMyBooking(bookingId: string, newStartDateTime: Date) {
         customerName: booking.customer.name,
         customerEmail: booking.customer.email!,
         customerPhone: booking.customer.phone,
-        serviceName: booking.service.name,
+        serviceName: bookingServiceName(booking),
         // Reprogramar conserva la persona: el nombre leído antes de la tx
         // sigue siendo el que atiende.
         professionalName: booking.professional?.name ?? null,
@@ -274,6 +277,7 @@ async function _getMyRescheduleSlots(bookingId: string, date: Date) {
     where: ownedManageableBookingWhere(bookingId, user.id),
     include: {
       service: { select: { durationMinutes: true, isActive: true } },
+      serviceLines: { select: { serviceId: true } },
       business: { select: { timezone: true, bookingWindowDays: true, slotStepMinutes: true } },
     },
   })

@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
 import { uniqueCustomerPhone } from './helpers/customer'
+import { toLocalDateStr } from './helpers/dates'
 
 const E2E_EMAIL = 'e2e@test.agendita.cl'
 const E2E_OWNER_EMAIL = 'owner@mimosnails.com'
@@ -37,7 +38,7 @@ async function selectBookingDate(page: import('@playwright/test').Page, date: Da
   for (let i = 0; i < monthOffset; i += 1) {
     await page.getByRole('button', { name: 'Mes siguiente' }).click()
   }
-  await page.getByRole('button', { name: String(date.getDate()), exact: true }).click()
+  await page.locator(`button[data-day="${toLocalDateStr(date)}"]`).click()
 }
 
 test.describe('public pages', () => {
@@ -213,19 +214,17 @@ test.describe('main beta flows', () => {
     await page.goto('/book/mimosnails')
     await page.getByRole('heading', { name: '¿Qué te hacemos hoy?' }).waitFor()
     await page.getByRole('button').filter({ hasText: 'Manicura rusa' }).click()
+    await page.getByRole('button', { name: 'Continuar', exact: true }).click()
 
-    await expect(page.getByRole('heading', { name: 'Elige una fecha' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Elige fecha y hora' })).toBeVisible()
     await selectBookingDate(page, date)
-    await page.getByRole('button', { name: 'Continuar' }).click()
-
-    await expect(page.getByRole('heading', { name: 'Elige una hora' })).toBeVisible({ timeout: 15000 })
-    await page.locator('button').filter({ hasText: /^\d{2}:\d{2}$/ }).first().click()
-    await page.getByRole('button', { name: 'Continuar' }).click()
+    await page.getByRole('button', { name: /^\d{2}:\d{2}\s+Hasta \d{2}:\d{2}$/ }).first().click()
+    await page.getByRole('button', { name: 'Continuar', exact: true }).click()
 
     await page.getByPlaceholder('Tu nombre').fill(customerName)
     await page.getByPlaceholder('+569...').fill(customerPhone)
     await page.getByPlaceholder('tu@email.com').fill(customerEmail)
-    await page.getByRole('button', { name: 'Continuar al pago' }).click()
+    await page.getByRole('button', { name: 'Revisar mi reserva', exact: true }).click()
 
     // With no per-business online payment account connected, the flow uses the
     // manual fallback ("Confirmar reserva" → pending) instead of online "Pago de

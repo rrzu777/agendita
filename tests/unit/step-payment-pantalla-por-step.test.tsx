@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { createAnalyticsStore, type AnalyticsStore } from '@/lib/analytics/client-store'
 import { clickButton } from '../helpers/react-dom'
+import { STALE_BOOKING_QUOTE_MESSAGE } from '@/lib/bookings/price-preview'
 
 const mockCreateBooking = vi.hoisted(() => vi.fn())
 const mockPreviewPromotion = vi.hoisted(() => vi.fn())
@@ -84,6 +85,71 @@ const bookingData = {
  * componente decide solo.
  */
 describe('StepPayment — la pantalla la manda el step', () => {
+  it('sends the reviewed amounts and offers refresh, not silent retry, when they changed', async () => {
+    const { StepPayment } = await import('@/components/booking/step-payment')
+    mockCreateBooking.mockResolvedValue({ ok: false, error: STALE_BOOKING_QUOTE_MESSAGE })
+    const host = document.createElement('div'); const root = createRoot(host)
+    try {
+      await act(async () => root.render(<StepPayment data={bookingData} updateData={vi.fn()} businessId="biz-1" timezone={TZ} currency="CLP" cancellationPolicyRevision="revision-1" selfServiceCutoffHours={24} manualHoldHours={24} onSuccess={vi.fn()} onBack={vi.fn()} />))
+      await act(async () => host.querySelector<HTMLInputElement>('#accept-terms')!.click())
+      await clickButton(host, 'Confirmar reserva')
+      expect(mockCreateBooking).toHaveBeenCalledWith(expect.objectContaining({ expected: { totalPrice: 20000, durationMinutes: 60, finalAmount: 20000, depositRequired: 0 } }), 'biz-1')
+      expect(host.textContent).toContain('Actualizar precios y horarios')
+      expect(host.textContent).not.toContain('Intentar de nuevo')
+    } finally { await act(async () => root.unmount()) }
+  })
+  it.each(['pending', 'error'])('does not consume a hidden prepaid package when its preview is %s', async kind => {
+    const { StepPayment } = await import('@/components/booking/step-payment')
+    if (kind === 'pending') packages.mockImplementation(() => new Promise(() => {}))
+    else packages.mockResolvedValue({ ok: false, error: 'Synthetic preview unavailable' })
+    mockCreateBooking.mockResolvedValue({ ok: false, error: 'Synthetic stop' })
+    const host = document.createElement('div'); const root = createRoot(host)
+    try {
+      await act(async () => root.render(<StepPayment data={bookingData} updateData={vi.fn()} businessId="biz-1" timezone={TZ} currency="CLP" cancellationPolicyRevision="revision-1" selfServiceCutoffHours={24} manualHoldHours={24} onSuccess={vi.fn()} onBack={vi.fn()} />))
+      expect(host.textContent).not.toContain('Usar mi paquete')
+      await act(async () => host.querySelector<HTMLInputElement>('#accept-terms')!.click())
+      await clickButton(host, 'Confirmar reserva')
+      expect(mockCreateBooking).toHaveBeenCalledWith(expect.objectContaining({ skipPackage: true }), 'biz-1')
+    } finally { await act(async () => root.unmount()) }
+  })
+  it('keeps the uncovered service payable and submits every line and optional notes', async () => {
+    const { StepPayment } = await import('@/components/booking/step-payment')
+    packages.mockResolvedValue({ ok: true, data: { remaining: 2, discountAmount: 15000, depositRequired: 1000, coveredServiceName: 'Corte' } })
+    mockCreateBooking.mockResolvedValue({ ok: false, error: 'Synthetic stop before creation' })
+    const host = document.createElement('div'); document.body.append(host); const root = createRoot(host)
+    try {
+      await act(async () => root.render(<StepPayment data={{ ...bookingData, serviceId: 'cut', serviceIds: ['cut', 'nose'], serviceName: 'Corte + Nasal', servicePrice: 19000, serviceDeposit: 6000, customerNotes: 'Prefiero tijeras' }} updateData={vi.fn()} businessId="biz-1" timezone={TZ} currency="CLP" cancellationPolicyRevision="revision-1" selfServiceCutoffHours={24} manualHoldHours={24} onSuccess={vi.fn()} onBack={vi.fn()} />))
+      expect(host.textContent).toContain('Los demás servicios suman $4.000')
+      expect(host.textContent).toContain('Precio final$4.000')
+      expect(host.textContent).toContain('Abono requerido$1.000')
+      expect(host.textContent).not.toContain('no queda saldo por pagar')
+      expect(packages).toHaveBeenCalledWith(expect.objectContaining({ serviceIds: ['cut', 'nose'] }))
+      await act(async () => host.querySelector<HTMLInputElement>('#accept-terms')!.click())
+      await clickButton(host, 'Confirmar reserva')
+      expect(mockCreateBooking).toHaveBeenCalledWith(expect.objectContaining({ serviceId: 'cut', serviceIds: ['cut', 'nose'], customerNotes: 'Prefiero tijeras', skipPackage: false }), 'biz-1')
+    } finally { await act(async () => root.unmount()); host.remove() }
+  })
+  it('carries the persisted partial-package amounts into confirmation, not catalogue estimates', async () => {
+    const { StepPayment } = await import('@/components/booking/step-payment')
+    const { StepConfirmation } = await import('@/components/booking/step-confirmation')
+    packages.mockResolvedValue({ ok: true, data: { remaining: 2, discountAmount: 15000, depositRequired: 1000, coveredServiceName: 'Corte' } })
+    const amounts = { totalPrice: 19000, discountAmount: 15000, finalAmount: 4000, remainingBalance: 4000 }
+    mockCreateBooking.mockResolvedValue({ ok: true, data: { ...amounts, id: 'synthetic', bookingNumber: 1, status: 'pending_payment', modality: 'on_site', serviceAddress: null, meetingUrl: null, professional: null, depositRequired: 1000, depositPaid: 0, cancellationCutoffHours: 24, cancellationPolicySnapshot: null, pushMode: null, pushGrant: null } })
+    const data = { ...bookingData, serviceIds: ['cut', 'nose'], servicePrice: 19000, serviceDeposit: 6000 }
+    const host = document.createElement('div'); const root = createRoot(host); const success = vi.fn()
+    try {
+      await act(async () => root.render(<StepPayment data={data} updateData={vi.fn()} businessId="biz-1" timezone={TZ} currency="CLP" cancellationPolicyRevision="revision-1" selfServiceCutoffHours={24} manualHoldHours={24} onSuccess={success} onBack={vi.fn()} />))
+      await act(async () => host.querySelector<HTMLInputElement>('#accept-terms')!.click())
+      await clickButton(host, 'Confirmar reserva')
+      expect(success).toHaveBeenCalledWith(expect.objectContaining({ amounts, depositRequired: 1000, depositPaid: 0 }))
+      const result = success.mock.calls[0][0]
+      await act(async () => root.render(<StepConfirmation {...result} bookingId={result.id} data={data} timezone={TZ} currency="CLP" sessionEmail={null} business={{ name: 'Synthetic', addressText: null, whatsapp: null }} />))
+      expect(host.textContent).toContain('Precio final$4.000')
+      expect(host.textContent).toContain('Abono requerido$1.000')
+      expect(host.textContent).toContain('Total por pagar$4.000')
+      expect(host.textContent).not.toContain('$6.000')
+    } finally { await act(async () => root.unmount()) }
+  })
   it.each(['withdraw', 'new-attempt'] as const)('keeps a valid economic preview across %s without attributing its old observation', async (change) => {
     const { StepPayment } = await import('@/components/booking/step-payment')
     capture.changeSelection({ reason: 'time', context: null, localDate: null })

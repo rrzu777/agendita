@@ -1,3 +1,4 @@
+import { bookingServiceName } from '@/lib/bookings/service-lines'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { DashboardHeader } from '@/components/dashboard/header'
@@ -113,7 +114,7 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
     <article className="studio-card p-5">
       <div className="mb-4 flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="text-lg font-semibold text-primary truncate">{booking.service?.name || 'Servicio'}</h3>
+          <h3 className="text-lg font-semibold text-primary truncate">{bookingServiceName(booking)}</h3>
           <p className="text-sm text-muted-foreground">{formatBookingNumber(booking.bookingNumber, booking.id)}</p>
         </div>
         <div data-tour-id="bookings-status" className="flex shrink-0 flex-col items-end gap-1">
@@ -185,7 +186,7 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
             bookingNumber: booking.bookingNumber,
             customerName: booking.customer?.name || '',
             customerPhone: booking.customer?.phone || null,
-            serviceName: booking.service?.name || '',
+            serviceName: bookingServiceName(booking),
             professionalName: booking.professional?.name ?? null,
             startDateTime: booking.startDateTime.toISOString(),
             businessTimezone,
@@ -302,7 +303,7 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
         <div data-tour-id="bookings-actions" className="mt-4 flex gap-2 border-t border-border/50 pt-4">
           <ReviveBookingButton
             bookingId={booking.id}
-            serviceName={booking.service?.name || 'Servicio'}
+            serviceName={bookingServiceName(booking)}
             customerName={booking.customer?.name}
             customerHasEmail={!!booking.customer?.email}
             canReopen={reviveState.canReopen}
@@ -376,7 +377,7 @@ export default async function BookingsPage({
           bookingId: b.id,
           customerName: b.customer?.name || `Sin ${vocabulary.client}`,
           customerPhone: b.customer?.phone ?? null,
-          serviceName: b.service?.name || 'Servicio',
+          serviceName: bookingServiceName(b),
           startDateTime: b.startDateTime,
           amount: p.amount,
           declaredAt: p.createdAt,
@@ -491,7 +492,7 @@ export default async function BookingsPage({
                     <TableRow key={booking.id}>
                       <TruncatedCell
                         className="font-semibold text-primary"
-                        primary={booking.service?.name || 'Servicio'}
+                        primary={bookingServiceName(booking)}
                         secondary={
                           isNotableModality(booking.modality)
                             ? `${formatBookingNumber(booking.bookingNumber, booking.id)} · ${bookingWhere(booking).label}`
@@ -547,7 +548,7 @@ export default async function BookingsPage({
                                 bookingNumber: booking.bookingNumber,
                                 customerName: booking.customer?.name || '',
                                 customerPhone: booking.customer?.phone || null,
-                                serviceName: booking.service?.name || '',
+                                serviceName: bookingServiceName(booking),
                                 professionalName: booking.professional?.name ?? null,
                                 startDateTime: booking.startDateTime.toISOString(),
                                 businessTimezone,
@@ -569,7 +570,7 @@ export default async function BookingsPage({
                                 bookingNumber: booking.bookingNumber,
                                 customerName: booking.customer?.name || '',
                                 customerPhone: booking.customer?.phone ?? null,
-                                serviceName: booking.service?.name || '',
+                                serviceName: bookingServiceName(booking),
                                 professionalName: booking.professional?.name ?? null,
                                 startDateTime: booking.startDateTime.toISOString(),
                                 businessTimezone,

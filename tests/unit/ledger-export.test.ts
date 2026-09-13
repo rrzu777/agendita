@@ -197,6 +197,7 @@ describe('GET /api/dashboard/ledger/export', () => {
       booking: {
         include: {
           service: true,
+          serviceLines: { select: { position: true, name: true } },
           customer: true,
         },
       },

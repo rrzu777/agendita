@@ -51,6 +51,8 @@ const PUBLICAS: Record<string, string> = {
     'valida la sesión a mano con supabase.auth.getUser() porque corre justo cuando la fila User todavía no existe y requireUser fallaría',
 
   // --- Funnel público de reserva: la clienta no tiene cuenta.
+  'src/server/actions/availability.ts#getAvailabilityPreview':
+    'resumen público agregado sin filas privadas; rate limit por IP, negocio activo, selección/profesional validados y lecturas acotadas a 31 días con presupuestos de filas',
   'src/server/actions/availability.ts#getAvailableTimeSlots':
     'el calendario público; rate limit por IP y sólo responde de negocios activos',
   'src/server/actions/availability.ts#getAvailableTimeSlotsResult':

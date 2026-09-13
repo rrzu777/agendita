@@ -45,6 +45,13 @@ describe('getBusinessPublicUrl', () => {
 })
 
 describe('public acquisition navigation', () => {
+  it('preserves one bounded professional preference, never duplicate or unsafe values', async () => {
+    const { publicAcquisitionSearch } = await load()
+    expect(publicAcquisitionSearch({ professional: 'ana-1', email: 'private@example.test' })).toBe('professional=ana-1')
+    for (const professional of [['ana', 'beto'], '../admin', 'x'.repeat(129), '']) {
+      expect(publicAcquisitionSearch({ professional })).toBe('')
+    }
+  })
   it('preserves referral separately and only bounded allowlisted acquisition values', async () => {
     const { publicAcquisitionSearch } = await load()
     const result = new URLSearchParams(publicAcquisitionSearch(new URLSearchParams('ref=74d2b4a1-c53a-41d5-a145-5318f1d2d382&acq=abcdefghijklmnopqrstuv&utm_source=IG&utm_medium=social&utm_campaign=link-public&credential=secret&email=name@example.com&continuar=1')))

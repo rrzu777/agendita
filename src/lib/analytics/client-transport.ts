@@ -67,7 +67,7 @@ export function createAnalyticsTransport(store: AnalyticsStore, slug: string, op
         try {
           const payload = stream.kind === 'session'
             ? { bootstrapKey: stream.key, consent: true, consentVersion: options.consentVersion ?? 1, ...options.acquisition }
-            : { bootstrapKey: stream.key, credential: parent!.receipt!.credential, entryKind: stream.entryKind }
+            : { bootstrapKey: stream.key, credential: parent!.receipt!.credential, entryKind: stream.entryKind, flowVersion: stream.flowVersion ?? 1 }
           const receipt = bootstrapSchema.parse(await post(stream.kind, payload))
           store.mutate((next) => { const s = next.streams.find((s) => s.key === stream.key); if (s) { s.receipt = receipt; s.retries = 0; s.retryAt = 0 } })
         } catch (error) { failure(stream, [], error) }

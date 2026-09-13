@@ -1,3 +1,4 @@
+import { bookingServiceName } from '@/lib/bookings/service-lines'
 import { notFound, redirect } from 'next/navigation'
 import { prisma } from '@/lib/db'
 import { getCurrentUser } from '@/lib/auth/user'
@@ -31,7 +32,7 @@ export default async function ReprogramarPage({
       approvalExpiresAt: true,
       cancellationCutoffHours: true,
       cancellationPolicySnapshot: true,
-      service: { select: { name: true } },
+      service: { select: { name: true } }, serviceLines: { select: { position: true, name: true } },
       business: { select: { slug: true, name: true, timezone: true, selfServiceCutoffHours: true, cancellationPolicy: true } },
     },
   })
@@ -60,7 +61,7 @@ export default async function ReprogramarPage({
       <ReprogramarForm
         bookingId={booking.id}
         slug={booking.business.slug}
-        serviceName={booking.service.name}
+        serviceName={bookingServiceName(booking)}
         currentDate={formatInTimeZone(booking.startDateTime, timezone, 'yyyy-MM-dd')}
         currentTime={formatInTimeZone(booking.startDateTime, timezone, 'HH:mm')}
         timezone={timezone}

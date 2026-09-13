@@ -13,7 +13,7 @@ import { resolveBookingModality } from '@/lib/services/modality'
 import {
   eligibleProfessionals,
   funnelProfessionalsQueryFor,
-  professionalChoice,
+  professionalChoiceForServices,
   toFunnelProfessionals,
 } from '@/lib/professionals/eligible'
 
@@ -62,7 +62,7 @@ export async function getTeamAvailableSlotsResult({
   slotOptions,
 }: {
   businessId: string
-  service: { id: string; durationMinutes: number; modalities: ServiceModality[] }
+  service: { id: string; serviceIds?: string[]; durationMinutes: number; modalities: ServiceModality[] }
   date: Date
   /** La que eligió la clienta. Se re-deriva contra las del servicio, igual que al escribir. */
   requestedModality: ServiceModality | null | undefined
@@ -104,9 +104,8 @@ export async function getTeamAvailableSlotsResult({
     }),
   ])
 
-  const personas = eligibleProfessionals(
-    professionalChoice(toFunnelProfessionals(equipo), service.id, modality),
-  )
+  const choice = professionalChoiceForServices(toFunnelProfessionals(equipo), service.serviceIds ?? [service.id], modality)
+  const personas = choice.kind === 'unavailable' ? [] : eligibleProfessionals(choice)
 
   // El Map deduplica por instante de inicio. El fin no entra en la clave porque es
   // siempre inicio + duración del servicio: dos personas libres a la misma hora

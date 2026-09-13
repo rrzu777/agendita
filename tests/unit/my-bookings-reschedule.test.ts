@@ -58,6 +58,7 @@ function makeBooking(overrides: Record<string, unknown> = {}) {
     internalNotes: null,
     bookingNumber: 4738,
     startDateTime: new Date(NOW.getTime() + 48 * 3_600_000),
+    endDateTime: new Date(NOW.getTime() + 49 * 3_600_000),
     status: 'confirmed',
     cancellationCutoffHours: 24,
     cancellationPolicySnapshot: null,
@@ -97,6 +98,7 @@ describe('rescheduleMyBooking', () => {
     expect(arg).not.toHaveProperty('leadTimeMinutes')
     expect(arg.newStartDateTime).toBe(newStart)
     expect(arg.durationMinutes).toBe(60)
+    expect(mockFindFirstBooking.mock.calls[0][0].select.endDateTime).toBe(true)
     expect(arg.timezone).toBe('America/Santiago')
 
     expect(mockSendOwnerBookingChangedNotification).toHaveBeenCalledWith(

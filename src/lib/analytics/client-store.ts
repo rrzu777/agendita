@@ -9,6 +9,7 @@ export type StoragePort = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>
 export interface BootstrapReceipt { id: string; credential: string; startedAt: string; expiresAt: string; retentionExpiresAt: string }
 export interface ClientStream {
   key: string; kind: 'session' | 'attempt'; parent?: string; entryKind?: 'complete' | 'partial'
+  flowVersion?: 1 | 2
   receipt?: BootstrapReceipt; sequence: number; completed: boolean; gap: boolean
   retries: number; retryAt: number; disabled: boolean; gapRecorded?: boolean; completedRevision?: number; createdAt: number
   availabilityGeneration?: number; bootstrapSends?: number
@@ -21,11 +22,12 @@ export interface ClientState {
 export interface StoreOptions {
   businessId: string; origin: string; storage: StoragePort; preferences: StoragePort
   consentVersion?: AnalyticsConsentVersion
+  flowVersion?: 1 | 2
   now?: () => number; uuid?: () => string
 }
 
 const timestamp = z.number().finite().nonnegative()
-const streamSchema = z.strictObject({ key: z.uuid(), kind: z.enum(['session', 'attempt']), parent: z.uuid().optional(), entryKind: z.enum(['complete', 'partial']).optional(), receipt: z.strictObject({ id: z.uuid(), credential: z.string().min(1).max(4096), startedAt: z.iso.datetime(), expiresAt: z.iso.datetime(), retentionExpiresAt: z.iso.datetime() }).optional(), sequence: z.number().int().nonnegative().max(2147483647), completed: z.boolean(), gap: z.boolean(), retries: z.number().int().nonnegative(), retryAt: timestamp, disabled: z.boolean(), gapRecorded: z.boolean().optional(), completedRevision: z.number().int().positive().optional(), createdAt: timestamp, availabilityGeneration: z.number().int().nonnegative().max(100000).optional(), bootstrapSends: z.number().int().nonnegative().max(1 + policy.transientRetries).optional() })
+const streamSchema = z.strictObject({ key: z.uuid(), kind: z.enum(['session', 'attempt']), parent: z.uuid().optional(), entryKind: z.enum(['complete', 'partial']).optional(), flowVersion: z.union([z.literal(1), z.literal(2)]).optional(), receipt: z.strictObject({ id: z.uuid(), credential: z.string().min(1).max(4096), startedAt: z.iso.datetime(), expiresAt: z.iso.datetime(), retentionExpiresAt: z.iso.datetime() }).optional(), sequence: z.number().int().nonnegative().max(2147483647), completed: z.boolean(), gap: z.boolean(), retries: z.number().int().nonnegative(), retryAt: timestamp, disabled: z.boolean(), gapRecorded: z.boolean().optional(), completedRevision: z.number().int().positive().optional(), createdAt: timestamp, availabilityGeneration: z.number().int().nonnegative().max(100000).optional(), bootstrapSends: z.number().int().nonnegative().max(1 + policy.transientRetries).optional() })
 const stateSchema = z.strictObject({ version: z.literal(1), owner: z.uuid(), streams: z.array(streamSchema).max(200), session: z.uuid(), active: z.uuid().nullable(), revision: z.number().int().positive().max(2147483647), selection: z.unknown(), selectionSignature: z.string().max(1500).optional(), viewed: z.array(z.string().max(150)).max(30).optional(), queue: z.array(z.strictObject({ stream: z.uuid(), event: analyticsEventSchema, queuedAt: timestamp, retries: z.number().int().nonnegative(), retryAt: timestamp })).max(policy.queueEvents) })
 
 /** Preference is origin-local, additionally namespaced by the exact origin and tenant. */
@@ -119,12 +121,17 @@ export function createAnalyticsStore(options: StoreOptions) {
     },
     startAttempt(entryKind: 'complete' | 'partial') {
       mutate((next) => {
-        if (valid(next.streams.find((s) => s.key === next.active))) return
+        const active = next.streams.find((s) => s.key === next.active)
+        const flowVersion = options.flowVersion ?? 1
+        const activeIsValid = Boolean(valid(active))
+        if (activeIsValid && (active?.flowVersion ?? 1) === flowVersion) return
         let session = next.streams.find((s) => s.key === next.session)
         if (!valid(session)) { session = stream('session'); next.streams.push(session); next.session = session.key }
-        const attempt = { ...stream('attempt'), parent: next.session, entryKind }
+        if (active) active.completed = true
+        const resolvedEntryKind = activeIsValid ? 'partial' as const : entryKind
+        const attempt = { ...stream('attempt'), parent: next.session, entryKind: resolvedEntryKind, flowVersion }
         next.streams.push(attempt); next.active = attempt.key; next.revision = 1; next.selection = null; delete next.selectionSignature
-        if (entryKind === 'complete') add(next, { type: 'funnel_started', data: {} })
+        if (resolvedEntryKind === 'complete') add(next, { type: 'funnel_started', data: {} })
       })
     },
     track(draft: AnalyticsDraft, binding?: string) { mutate((next) => add(next, draft, binding)) },

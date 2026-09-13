@@ -1,5 +1,6 @@
 'use client'
 
+import { bookingServiceName } from '@/lib/bookings/service-lines'
 import { useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -126,7 +127,7 @@ export function ReviewsClient({
         const haystack = [
           review.customer?.name ?? '',
           review.comment ?? '',
-          review.booking?.service?.name ?? '',
+          (review.booking ? bookingServiceName(review.booking) : '—'),
         ].join(' ').toLowerCase()
         if (!haystack.includes(q)) return false
       }
@@ -246,7 +247,7 @@ export function ReviewsClient({
               <TableBody>
                 {eligibleBookings.map((booking) => (
                   <TableRow key={booking.id}>
-                    <TruncatedCell className="font-semibold text-primary" primary={booking.service.name} />
+                    <TruncatedCell className="font-semibold text-primary" primary={bookingServiceName(booking)} />
                     <TruncatedCell
                       className={TABLE_COL.name}
                       primary={
@@ -276,7 +277,7 @@ export function ReviewsClient({
               {eligibleBookings.map((booking) => (
                 <TableMobileCard
                   key={booking.id}
-                  title={booking.service.name}
+                  title={bookingServiceName(booking)}
                   subtitle={booking.customer.name}
                   rows={[{ label: 'Fecha', value: formatDate(booking.startDateTime) }]}
                   actions={<ReviewLinkButton bookingId={booking.id} hasToken={!!booking.reviewToken} />}
@@ -332,7 +333,7 @@ export function ReviewsClient({
                         }
                         secondary={`#${review.id.slice(0, 8)}`}
                       />
-                      <TruncatedCell className={TABLE_COL.name} primary={review.booking?.service?.name || '—'} />
+                      <TruncatedCell className={TABLE_COL.name} primary={(review.booking ? bookingServiceName(review.booking) : '—')} />
                       <TableCell className={TABLE_COL.date}>
                         {review.booking?.startDateTime ? formatDate(review.booking.startDateTime) : '—'}
                       </TableCell>
@@ -368,7 +369,7 @@ export function ReviewsClient({
                   subtitle={`#${review.id.slice(0, 8)}`}
                   badge={<StatusBadge map="review" status={state} />}
                   rows={[
-                    { label: 'Servicio', value: review.booking?.service?.name || '—' },
+                    { label: 'Servicio', value: (review.booking ? bookingServiceName(review.booking) : '—') },
                     { label: 'Fecha reserva', value: review.booking?.startDateTime ? formatDate(review.booking.startDateTime) : '—' },
                     {
                       label: 'Calificación',

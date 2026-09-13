@@ -3,6 +3,7 @@ import type { Prisma, PrismaClient } from '@prisma/client'
 import { expandSeries, type EffectiveBlock } from '@/lib/calendar/expand-series'
 import { getLocalDateStr, startOfLocalDay } from '@/lib/availability/timezone'
 import { blockScopeCondition, type BlockScope } from '@/lib/availability/scope'
+import { UserError } from '@/lib/actions/result'
 
 export type { EffectiveBlock } from '@/lib/calendar/expand-series'
 
@@ -23,6 +24,7 @@ export async function getEffectiveBlocks({
   timezone,
   scope,
   client = prisma,
+  limits,
 }: {
   businessId: string
   rangeStart: Date
@@ -30,6 +32,7 @@ export async function getEffectiveBlocks({
   timezone: string
   scope: BlockScope
   client?: PrismaClient | Prisma.TransactionClient
+  limits?: { oneOff: number; series: number; exceptionsPerSeries: number; expanded: number }
 }): Promise<EffectiveBlock[]> {
   // `until` se guarda como marcador de día (00:00 local). Comparar contra el
   // instante intra-día `rangeStart` descartaría el último día de una serie acotada
@@ -52,6 +55,7 @@ export async function getEffectiveBlocks({
 
   const [oneOff, series] = await Promise.all([
     client.timeBlock.findMany({
+      ...(limits ? { take: limits.oneOff + 1 } : {}),
       where: {
         businessId,
         startDateTime: { lte: rangeEnd },
@@ -61,6 +65,7 @@ export async function getEffectiveBlocks({
       orderBy: { startDateTime: 'asc' },
     }),
     client.timeBlockSeries.findMany({
+      ...(limits ? { take: limits.series + 1 } : {}),
       where: {
         businessId,
         isActive: true,
@@ -79,6 +84,7 @@ export async function getEffectiveBlocks({
       // disponibilidad recorriera el historial completo de la serie.
       include: {
         exceptions: {
+          ...(limits ? { take: limits.exceptionsPerSeries + 1 } : {}),
           where: {
             OR: [
               { occurrenceDate: { gte: rangeStartDay, lte: rangeEndDay } },
@@ -90,6 +96,9 @@ export async function getEffectiveBlocks({
     }),
   ])
 
+  const budgetError = () => new UserError('La agenda es demasiado grande para este resumen. Consulta un período más corto.')
+  if (limits && (oneOff.length > limits.oneOff || series.length > limits.series || series.some(s => s.exceptions.length > limits.exceptionsPerSeries) || oneOff.length > limits.expanded)) throw budgetError()
+
   const blocks: EffectiveBlock[] = oneOff.map((b) => ({
     id: b.id,
     startDateTime: b.startDateTime,
@@ -100,7 +109,9 @@ export async function getEffectiveBlocks({
   }))
 
   for (const s of series) {
-    blocks.push(...expandSeries(s, s.exceptions, rangeStart, rangeEnd, timezone))
+    const occurrences = expandSeries(s, s.exceptions, rangeStart, rangeEnd, timezone)
+    if (limits && blocks.length + occurrences.length > limits.expanded) throw budgetError()
+    blocks.push(...occurrences)
   }
 
   return blocks

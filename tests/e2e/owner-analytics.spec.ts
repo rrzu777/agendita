@@ -109,10 +109,10 @@ for (const layout of ['desktop', 'mobile'] as const) {
     await expect(flow).toContainText('Detalle disponible')
     await expect(flow).toContainText('(fin exclusivo)')
     await expect(flow).toContainText('UTC')
-    for (const [label, count] of [['Entrada completa · maduros', 3], ['Entrada completa · en curso', 2], ['Entrada parcial · maduros', 1], ['Entrada parcial · en curso', 4]] as const) {
+    for (const [label, count] of [['Flujo v1 · entrada completa · maduros', 3], ['Flujo v1 · entrada completa · en curso', 2], ['Flujo v1 · entrada parcial · maduros', 1], ['Flujo v1 · entrada parcial · en curso', 4]] as const) {
       await expect(flow.getByRole('region', { name: label, exact: true }).locator('[data-flow-count]')).toHaveText(`${count} intento${count === 1 ? '' : 's'} observado${count === 1 ? '' : 's'}`)
     }
-    const mature = flow.getByRole('region', { name: 'Entrada completa · maduros', exact: true })
+    const mature = flow.getByRole('region', { name: 'Flujo v1 · entrada completa · maduros', exact: true })
     const expand = mature.locator('summary')
     await expand.focus()
     await page.keyboard.press('Enter')
@@ -137,10 +137,10 @@ for (const layout of ['desktop', 'mobile'] as const) {
     await page.goto(`${flowMetricsUrl}&serviceId=${fixture.serviceId}`)
     await expect(flow).toContainText('Servicio del último contexto observado')
     await expect(flow).toContainText('no incluye todos los servicios considerados')
-    await expect(flow.getByRole('region', { name: 'Entrada completa · maduros', exact: true }).locator('[data-flow-count]')).toHaveText('2 intentos observados')
-    await expect(flow.getByRole('region', { name: 'Entrada completa · en curso', exact: true }).locator('[data-flow-count]')).toHaveText('0 intentos observados')
-    await expect(flow.getByRole('region', { name: 'Entrada parcial · maduros', exact: true })).toContainText('Sin intentos observados')
-    await expect(flow.getByRole('region', { name: 'Entrada parcial · en curso', exact: true }).locator('[data-flow-count]')).toHaveText('0 intentos observados')
+    await expect(flow.getByRole('region', { name: 'Flujo v1 · entrada completa · maduros', exact: true }).locator('[data-flow-count]')).toHaveText('2 intentos observados')
+    await expect(flow.getByRole('region', { name: 'Flujo v1 · entrada completa · en curso', exact: true }).locator('[data-flow-count]')).toHaveText('0 intentos observados')
+    await expect(flow.getByRole('region', { name: 'Flujo v1 · entrada parcial · maduros', exact: true })).toContainText('Sin intentos observados')
+    await expect(flow.getByRole('region', { name: 'Flujo v1 · entrada parcial · en curso', exact: true }).locator('[data-flow-count]')).toHaveText('0 intentos observados')
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
     await page.waitForLoadState('networkidle')
     await flow.screenshot({ path: `test-results/owner-analytics/flow-breakdowns-${layout}-service.png` })

@@ -1,5 +1,6 @@
 'use client'
 
+import { bookingServiceName } from '@/lib/bookings/service-lines'
 import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -394,7 +395,7 @@ function MonthView({
               <div className="pointer-events-none relative mt-1 space-y-0.5 overflow-hidden">
                 {dayBookings.slice(0, 3).map((b) => {
                   const appearance = bookingAppearance(b.service?.pastelColor, displayedBookingStatus(b, now))
-                  const bookingLabel = `${b.customer?.name || b.service?.name || 'Reserva'} — ${localTime(b.startDateTime, timezone)}`
+                  const bookingLabel = `${b.customer?.name || bookingServiceName(b)} — ${localTime(b.startDateTime, timezone)}`
                   return (
                     <button
                       key={b.id}
@@ -419,7 +420,7 @@ function MonthView({
                         className="truncate text-[10px] leading-tight"
                         style={appearance.strikeThrough ? { textDecoration: 'line-through' } : undefined}
                       >
-                        {b.customer?.name || b.service?.name || 'Reserva'}
+                        {b.customer?.name || bookingServiceName(b)}
                       </span>
                     </button>
                   )
@@ -597,7 +598,7 @@ function BookingBlock({
       </span>
       <div className={`font-semibold ${strike}`}>{start}</div>
       <div className={`truncate ${strike}`}>{b.customer?.name || v.Client}</div>
-      {p.heightMin >= 45 && b.service?.name && <div className="truncate">{b.service.name}</div>}
+      {p.heightMin >= 45 && bookingServiceName(b) && <div className="truncate">{bookingServiceName(b)}</div>}
       {/* Quién atiende, si el chip tiene alto para una línea más. Con el filtro
           en "todo el equipo" es lo que distingue dos citas a la misma hora. */}
       {p.heightMin >= 60 && b.professional && (

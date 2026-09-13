@@ -5,6 +5,7 @@
 // (owner/admin). Reusa los helpers de declared.ts y applyApprovedPayment;
 // no exportar tipos desde este módulo (boundary de 'use server').
 
+import { bookingServiceName } from '@/lib/bookings/service-lines'
 import { prisma } from '@/lib/db'
 import { requireBusinessRole } from '@/lib/auth/server'
 import { revalidatePath } from 'next/cache'
@@ -61,7 +62,7 @@ async function _confirmBankTransfer(
 
     const booking = await tx.booking.findUnique({
       where: { id: payment.bookingId },
-      include: { customer: true, service: true },
+      include: { customer: true, service: true, serviceLines: { select: { position: true, name: true } } },
     })
     if (!booking) throw new UserError('Reserva no encontrada')
     if (booking.status === 'expired') {
@@ -108,7 +109,7 @@ async function _confirmBankTransfer(
           currency: payment.currency,
           customerName: booking.customer?.name ?? null,
           customerEmail: booking.customer?.email ?? null,
-          serviceName: booking.service?.name ?? 'servicio',
+          serviceName: bookingServiceName(booking),
           startDateTime: booking.startDateTime,
           bookingNumber: booking.bookingNumber,
         },
@@ -230,7 +231,7 @@ async function _rejectBankTransfer(paymentId: string): Promise<{ ok: true }> {
     }
     const booking = await tx.booking.findUnique({
       where: { id: payment.bookingId },
-      include: { customer: true, service: true },
+      include: { customer: true, service: true, serviceLines: { select: { position: true, name: true } } },
     })
     return { booking, isBalance, amount, currency }
   })
@@ -246,7 +247,7 @@ async function _rejectBankTransfer(paymentId: string): Promise<{ ok: true }> {
       businessReplyToEmail: replyTo,
       customerName: rejected.customer!.name,
       customerEmail: rejected.customer!.email!,
-      serviceName: rejected.service?.name ?? 'servicio',
+      serviceName: bookingServiceName(rejected),
       startDateTime: rejected.startDateTime,
       bookingNumber: rejected.bookingNumber,
     }
