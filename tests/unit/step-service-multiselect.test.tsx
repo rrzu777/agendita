@@ -1,5 +1,6 @@
 import { act, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Service } from '@prisma/client'
 import type { BookingData } from '@/components/booking/wizard'
@@ -13,6 +14,12 @@ const services = [
 let root: Root
 afterEach(() => { act(() => root?.unmount()); document.body.replaceChildren() })
 describe('public service cart', () => {
+  it('does not offer service controls before hydration can handle their clicks', () => {
+    const data = { ...wizardServiceFields([], services), serviceModality: null } as BookingData
+    const html = renderToStaticMarkup(<StepService data={data} services={services} currency="CLP" onSelect={() => {}} onContinue={() => {}} />)
+    expect(html.match(/disabled=""/g)).toHaveLength(services.length)
+  })
+
   it('toggles two services in place, updates totals and requires explicit continue', async () => {
     const host = document.createElement('div'); document.body.append(host); root = createRoot(host)
     const next = vi.fn()

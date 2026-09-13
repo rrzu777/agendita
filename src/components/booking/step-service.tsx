@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { usePublicAnalytics } from '@/components/analytics/public-analytics'
 import type { BookingData } from './wizard'
 import type { Service } from '@prisma/client'
@@ -25,7 +25,13 @@ interface StepServiceProps {
 
 export function StepService({ data, services, currency, onSelect, onContinue, onInteraction, selectionError, selectionCompatible }: StepServiceProps) {
   const analytics = usePublicAnalytics()
+  const [hydrated, setHydrated] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  useEffect(() => {
+    // Until React owns the server-rendered buttons, a fast click would be lost.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- hydration readiness is client-only state.
+    setHydrated(true)
+  }, [])
   const selectedIds = wizardServiceIds(data)
   const groups = new Map<string, Service[]>()
   for (const service of services) {
@@ -59,7 +65,7 @@ export function StepService({ data, services, currency, onSelect, onContinue, on
         <div className="divide-y divide-border/60">
           {rows.map(service => {
             const selected = selectedIds.includes(service.id)
-            return <button key={service.id} type="button" aria-pressed={selected} onClick={() => toggle(service)} className={`flex min-h-20 w-full items-center gap-4 rounded-xl px-3 py-4 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${selected ? 'bg-secondary/50' : 'hover:bg-muted/50'}`}>
+            return <button key={service.id} type="button" aria-pressed={selected} disabled={!hydrated} onClick={() => toggle(service)} className={`flex min-h-20 w-full items-center gap-4 rounded-xl px-3 py-4 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${selected ? 'bg-secondary/50' : 'hover:bg-muted/50'}`}>
               <span className="min-w-0 flex-1">
                 <span className="block break-words font-heading text-lg font-semibold text-primary">{service.name}</span>
                 <span className="mt-1 block text-sm text-muted-foreground">{formatDuration(service.durationMinutes)} · {formatMoney(service.price, currency)}{service.depositAmount > 0 ? ` · abono ${formatMoney(service.depositAmount, currency)}` : ' · sin abono'}</span>
