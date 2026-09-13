@@ -425,7 +425,7 @@ describe('createBookingFromDashboard con persona', () => {
     expect(result.ok).toBe(true)
     // La autorización corre con la modalidad RESUELTA, no la pedida.
     expect(mockAssertProfessionalOffersService).toHaveBeenCalledWith(
-      expect.anything(), businessId, 'prof-1', 'svc-1', 'on_site',
+      expect.anything(), businessId, 'prof-1', ['svc-1'], 'on_site',
     )
     // El pick viaja entero al resolver, con lead time 0 (walk-ins) sin re-default.
     expect(mockAssertSlotAndResolveProfessional).toHaveBeenCalledWith(
@@ -440,6 +440,7 @@ describe('createBookingFromDashboard con persona', () => {
     // Assertear el include PEDIDO: el mock devuelve relaciones aunque nadie las pida.
     expect(createArgs.include).toEqual({
       service: true,
+      serviceLines: { orderBy: { position: 'asc' } },
       customer: true,
       professional: { select: { name: true } },
     })
@@ -487,6 +488,7 @@ describe('createBookingFromDashboard con persona', () => {
     expect(result.ok).toBe(true)
     expect(mockPrisma.booking.update.mock.calls[0][0].include).toEqual({
       service: true,
+      serviceLines: { orderBy: { position: 'asc' } },
       customer: true,
       professional: { select: { name: true } },
     })

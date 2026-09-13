@@ -1,3 +1,4 @@
+import { bookingServiceName } from '@/lib/bookings/service-lines'
 import { notFound } from 'next/navigation'
 import { prisma } from '@/lib/db'
 import { prepareMiUser } from '@/lib/auth/mi-user'
@@ -120,13 +121,13 @@ export default async function MiBusinessPage({ params }: { params: Promise<{ slu
     prisma.booking.findMany({
       where: { customerId: { in: customerIds }, startDateTime: { gte: now }, status: { in: [...UPCOMING_STATUSES] } },
       orderBy: { startDateTime: 'asc' },
-      select: { id: true, bookingNumber: true, startDateTime: true, status: true, paymentStatus: true, holdExpiresAt: true, approvalExpiresAt: true, cancellationCutoffHours: true, cancellationPolicySnapshot: true, depositRequired: true, depositPaid: true, modality: true, serviceAddress: true, meetingUrl: true, service: { select: { name: true } }, payments: PAGOS_QUE_PISAN_EL_HOLD },
+      select: { id: true, bookingNumber: true, startDateTime: true, status: true, paymentStatus: true, holdExpiresAt: true, approvalExpiresAt: true, cancellationCutoffHours: true, cancellationPolicySnapshot: true, depositRequired: true, depositPaid: true, modality: true, serviceAddress: true, meetingUrl: true, service: { select: { name: true } }, serviceLines: { select: { position: true, name: true } }, payments: PAGOS_QUE_PISAN_EL_HOLD },
     }),
     prisma.booking.findMany({
       where: { customerId: { in: customerIds }, OR: [{ startDateTime: { lt: now } }, { status: { notIn: [...UPCOMING_STATUSES] } }] },
       orderBy: { startDateTime: 'desc' },
       take: 20,
-      select: { id: true, bookingNumber: true, startDateTime: true, status: true, paymentStatus: true, holdExpiresAt: true, approvalExpiresAt: true, service: { select: { name: true } }, payments: PAGOS_QUE_PISAN_EL_HOLD },
+      select: { id: true, bookingNumber: true, startDateTime: true, status: true, paymentStatus: true, holdExpiresAt: true, approvalExpiresAt: true, service: { select: { name: true } }, serviceLines: { select: { position: true, name: true } }, payments: PAGOS_QUE_PISAN_EL_HOLD },
     }),
   ])
 
@@ -159,7 +160,7 @@ export default async function MiBusinessPage({ params }: { params: Promise<{ slu
               const { cutoffHours } = resolveCancellationPolicy(b, business)
               return (
               <li key={b.id} className="rounded-lg border border-gray-100 px-3 py-2 text-sm">
-                <div className="font-medium">{b.service?.name}</div>
+                <div className="font-medium">{bookingServiceName(b)}</div>
                 <div className="text-gray-500">{formatShortDate(b.startDateTime)} · {statusLabel(b, now)} · {formatBookingNumber(b.bookingNumber, b.id)}</div>
                 {(isNotableModality(b.modality) || where.detail) && (
                   <div className="text-gray-500">
@@ -209,7 +210,7 @@ export default async function MiBusinessPage({ params }: { params: Promise<{ slu
           <ul className="divide-y divide-gray-100">
             {past.map((b) => (
               <li key={b.id} className="flex items-center justify-between py-2 text-sm">
-                <span>{b.service?.name}</span>
+                <span>{bookingServiceName(b)}</span>
                 <span className="text-gray-400">{formatShortDate(b.startDateTime)} · {statusLabel(b, now)}</span>
               </li>
             ))}

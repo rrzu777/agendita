@@ -1,3 +1,4 @@
+import { bookingServiceName } from '@/lib/bookings/service-lines'
 import { NextRequest, NextResponse } from 'next/server'
 import { revalidatePath } from 'next/cache'
 import { prisma } from '@/lib/db'
@@ -460,7 +461,7 @@ export async function POST(request: NextRequest) {
           where: { id: bookingId },
           select: {
             customer: { select: { name: true } },
-            service: { select: { name: true } },
+            service: { select: { name: true } }, serviceLines: { select: { position: true, name: true } },
             business: { select: { name: true, currency: true, timezone: true, category: true } },
           },
         })
@@ -470,7 +471,7 @@ export async function POST(request: NextRequest) {
               businessName: bk.business.name,
               businessCategory: bk.business.category,
               customerName: bk.customer?.name ?? getVocabulary(bk.business.category).Client,
-              serviceName: bk.service?.name ?? 'servicio',
+              serviceName: bookingServiceName(bk),
               bookingLabel: formatBookingNumber(booking.bookingNumber, bookingId),
               startDateTime: booking.startDateTime,
               businessTimezone: bk.business.timezone || 'America/Santiago',
@@ -585,7 +586,7 @@ export async function POST(request: NextRequest) {
             select: {
               bookingNumber: true,
               customer: { select: { name: true } },
-              service: { select: { name: true } },
+              service: { select: { name: true } }, serviceLines: { select: { position: true, name: true } },
               business: { select: { name: true, currency: true } },
             },
           })
@@ -594,7 +595,7 @@ export async function POST(request: NextRequest) {
               sendBookingUnexpectedPaymentToBusiness(payment.businessId, {
                 businessName: bk.business.name,
                 customerName: bk.customer?.name ?? 'Clienta',
-                serviceName: bk.service?.name ?? 'servicio',
+                serviceName: bookingServiceName(bk),
                 bookingLabel: formatBookingNumber(bk.bookingNumber, bookingId),
                 amount: payment.amount,
                 businessCurrency: bk.business.currency || 'CLP',

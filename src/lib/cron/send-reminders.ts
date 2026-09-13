@@ -1,3 +1,4 @@
+import { bookingServiceName } from '@/lib/bookings/service-lines'
 import { prisma } from '@/lib/db'
 import { BookingStatus } from '@prisma/client'
 import { bookingInvite } from '@/lib/calendar/booking-invite'
@@ -24,7 +25,7 @@ export async function sendReminders(now: Date = new Date()): Promise<SendReminde
       reminderSentAt: null,
     },
     include: {
-      service: { select: { name: true } },
+      service: { select: { name: true } }, serviceLines: { select: { position: true, name: true } },
       professional: { select: { name: true } },
       customer: { select: { name: true, phone: true, email: true } },
       business: {
@@ -77,7 +78,7 @@ export async function sendReminders(now: Date = new Date()): Promise<SendReminde
         businessReplyToEmail: await getBusinessReplyToEmail(booking.business.id),
         customerName: booking.customer!.name,
         customerEmail: booking.customer!.email!,
-        serviceName: booking.service?.name ?? 'Servicio',
+        serviceName: bookingServiceName(booking),
         professionalName: booking.professional?.name ?? null,
         startDateTime: booking.startDateTime,
         businessTimezone: booking.business.timezone || 'America/Santiago',

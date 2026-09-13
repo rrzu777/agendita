@@ -1,3 +1,4 @@
+import { bookingServiceName } from '@/lib/bookings/service-lines'
 import { redirect, notFound } from 'next/navigation'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { getCurrentUserWithBusiness } from '@/lib/auth/user'
@@ -26,7 +27,7 @@ export default async function ReschedulePage({ params }: ReschedulePageProps) {
 
   const booking = await prisma.booking.findFirst({
     where: { id, businessId: userData.business.id },
-    include: { service: true, customer: true, professional: { select: { name: true } } },
+    include: { service: true, serviceLines: { select: { position: true, name: true } }, customer: true, professional: { select: { name: true } } },
   })
 
   if (!booking) {
@@ -37,7 +38,7 @@ export default async function ReschedulePage({ params }: ReschedulePageProps) {
     redirect(`/dashboard/bookings`)
   }
 
-  const subtitle = `${booking.service?.name || 'Servicio'} · ${formatBookingNumber(booking.bookingNumber, booking.id)}`
+  const subtitle = `${bookingServiceName(booking)} · ${formatBookingNumber(booking.bookingNumber, booking.id)}`
 
   const timezone = userData.business.timezone || 'America/Santiago'
   // El drawer ya esconde el botón, pero acá se llega igual: por URL directa, por
@@ -60,7 +61,7 @@ export default async function ReschedulePage({ params }: ReschedulePageProps) {
             bookingId={booking.id}
             customerName={booking.customer?.name || ''}
             customerPhone={booking.customer?.phone || ''}
-            serviceName={booking.service?.name || ''}
+            serviceName={bookingServiceName(booking)}
             professionalName={booking.professional?.name ?? null}
             currentDate={formatInTimeZone(booking.startDateTime, timezone, 'yyyy-MM-dd')}
             currentTime={formatInTimeZone(booking.startDateTime, timezone, 'HH:mm')}

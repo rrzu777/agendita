@@ -1,3 +1,4 @@
+import { bookingServiceName } from '@/lib/bookings/service-lines'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { CheckCircle2, Clock, XCircle, Calendar, Check, AlertCircle, MapPin } from 'lucide-react'
@@ -55,7 +56,7 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
           cancellationReminderEnabled: true,
         },
       },
-      service: true,
+      service: true, serviceLines: { select: { position: true, name: true } },
       customer: { select: { email: true, userId: true } },
       payments: {
         where: { provider: { in: ['mercado_pago', 'manual'] } },
@@ -280,7 +281,7 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
                   </div>
                   <span className="text-sm font-medium">Servicio</span>
                 </div>
-                <span className="text-right font-semibold text-primary">{booking.service.name}</span>
+                <span className="text-right font-semibold text-primary">{bookingServiceName(booking)}</span>
               </div>
 
               <div className="flex items-start justify-between gap-4">

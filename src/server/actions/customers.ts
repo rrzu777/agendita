@@ -1,5 +1,6 @@
 'use server'
 
+import { bookingServiceName } from '@/lib/bookings/service-lines'
 import { z } from 'zod'
 import { prisma } from '@/lib/db'
 import { revalidatePath } from 'next/cache'
@@ -258,7 +259,7 @@ export async function getCustomerDetail(customerId: string): Promise<CustomerDet
         totalPrice: true,
         remainingBalance: true,
         finalAmount: true,
-        service: { select: { name: true } },
+        service: { select: { name: true } }, serviceLines: { select: { position: true, name: true } },
         professional: { select: { name: true } },
       },
     }),
@@ -331,7 +332,7 @@ export async function getCustomerDetail(customerId: string): Promise<CustomerDet
     bookings: bookings.map((b) => ({
       id: b.id,
       bookingNumber: b.bookingNumber,
-      serviceName: b.service.name,
+      serviceName: bookingServiceName(b),
       startDateTime: b.startDateTime,
       status: b.status,
       professionalName: b.professional?.name ?? null,

@@ -1,8 +1,9 @@
 import type { Prisma } from '@prisma/client'
 import { isRedeemable, computeDiscount } from './evaluate'
 import { normalizeCode } from './schema'
+import { promotionLineScope } from './line-scope'
 
-export interface ApplyResult { discountAmount: number; promotionId: string }
+export interface ApplyResult { discountAmount: number; promotionId: string; eligibleServiceIds?: string[] }
 
 /** Resuelve y consume una promo por código dentro de una transacción de reserva.
  *  Devuelve null si no hay código. Lanza si el código es inválido (la reserva no debe crearse).
@@ -11,6 +12,7 @@ export async function applyPromotionInTx(tx: Prisma.TransactionClient, args: {
   businessId: string; code: string | null | undefined; serviceId: string; customerId: string
   totalPrice: number; bookingId: string; source: 'public_booking' | 'dashboard_booking'
   createdByUserId?: string | null; now?: Date
+  lines?: { serviceId: string; price: number }[]
 }): Promise<ApplyResult | null> {
   const code = normalizeCode(args.code)
   if (!code) return null
@@ -22,17 +24,18 @@ export async function applyPromotionInTx(tx: Prisma.TransactionClient, args: {
   })
   if (grant) {
     const p = grant.promotion
+    const scope = promotionLineScope({ ...p, serviceIds: p.services.map(s => s.id) }, args.lines ?? [{ serviceId: args.serviceId, price: args.totalPrice }])
     const now = args.now ?? new Date()
     if (grant.expiresAt && now > grant.expiresAt) throw new Error('La recompensa venció')
     // Stock y tope ya se consumieron al canjear; tampoco se exige p.isActive (la
     // clienta ya pagó los puntos, se honra). Sólo se valida alcance y mínimo.
-    if (!p.appliesToAll && !p.services.some(s => s.id === args.serviceId))
+    if (!scope.serviceIds.length)
       throw new Error('La recompensa no aplica a este servicio')
-    if (p.minSpend != null && args.totalPrice < p.minSpend)
+    if (p.minSpend != null && scope.totalPrice < p.minSpend)
       throw new Error('La recompensa requiere un monto mínimo mayor')
     const discount = computeDiscount(
       { ...p, serviceIds: p.services.map(s => s.id) } as Parameters<typeof computeDiscount>[0],
-      args.totalPrice,
+      scope.totalPrice,
     )
     // Flip atómico anti doble-aplicación concurrente del mismo código.
     const flipped = await tx.promotionGrant.updateMany({
@@ -47,7 +50,7 @@ export async function applyPromotionInTx(tx: Prisma.TransactionClient, args: {
         createdByUserId: args.createdByUserId ?? null,
       },
     })
-    return { discountAmount: discount, promotionId: p.id }
+    return { discountAmount: discount, promotionId: p.id, ...(args.lines ? { eligibleServiceIds: scope.serviceIds } : {}) }
   }
 
   const promo = await tx.promotion.findFirst({
@@ -55,13 +58,15 @@ export async function applyPromotionInTx(tx: Prisma.TransactionClient, args: {
     include: { services: { select: { id: true } } },
   })
   if (!promo) throw new Error('El código de promoción no es válido')
+  const scope = promotionLineScope({ ...promo, serviceIds: promo.services.map(s => s.id) }, args.lines ?? [{ serviceId: args.serviceId, price: args.totalPrice }])
+  if (!scope.serviceIds.length) throw new Error('El código ya no está disponible')
 
   const customerRedemptions = promo.maxPerCustomer == null ? 0
     : await tx.promotionRedemption.count({ where: { promotionId: promo.id, customerId: args.customerId, status: 'applied' } })
 
   const r = isRedeemable({
     promo: { ...promo, serviceIds: promo.services.map(s => s.id) },
-    serviceId: args.serviceId, totalPrice: args.totalPrice, customerRedemptions, now: args.now ?? new Date(),
+    serviceId: scope.serviceIds[0], totalPrice: scope.totalPrice, customerRedemptions, now: args.now ?? new Date(),
   })
   if (!r.ok) throw new Error('El código ya no está disponible')
 
@@ -83,5 +88,5 @@ export async function applyPromotionInTx(tx: Prisma.TransactionClient, args: {
       createdByUserId: args.createdByUserId ?? null,
     },
   })
-  return { discountAmount: r.discount, promotionId: promo.id }
+  return { discountAmount: r.discount, promotionId: promo.id, ...(args.lines ? { eligibleServiceIds: scope.serviceIds } : {}) }
 }

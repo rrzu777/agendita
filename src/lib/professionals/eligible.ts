@@ -1,4 +1,5 @@
 import type { Prisma, ServiceModality } from '@prisma/client'
+import { normalizeServiceSelection } from '@/lib/bookings/selection'
 
 /**
  * Lo que el funnel público sabe de cada persona del equipo. Es un tipo propio y no
@@ -140,6 +141,19 @@ export function eligibleProfessionals(choice: ProfessionalChoice): FunnelProfess
   return choice.kind === 'auto' ? [choice.professional] : choice.options
 }
 
+/** Unlike the legacy choice, an active team with no shared specialist is not
+ * an unassigned booking. Callers must ask the customer to change services. */
+export function professionalChoiceForServices(
+  professionals: FunnelProfessional[], serviceIds: string[], modality: ServiceModality | null,
+): ProfessionalChoice | { kind: 'unavailable' } {
+  if (!serviceIds.length || !professionals.length) return { kind: 'none' }
+  const ids = normalizeServiceSelection({ serviceIds })
+  const options = professionals.filter(p => ids.every(id => p.serviceIds.includes(id)) && (modality === null || p.modalities.includes(modality)))
+  if (!options.length) return { kind: 'unavailable' }
+  if (options.length === 1) return { kind: 'auto', professional: options[0] }
+  return { kind: 'ask', options }
+}
+
 /**
  * La MISMA regla de arriba, escrita para Postgres.
  *
@@ -163,11 +177,12 @@ export function eligibleProfessionals(choice: ProfessionalChoice): FunnelProfess
  * lado". El caso "todavía no hay modalidad" sólo existe en la pantalla.
  */
 export function professionalEligibilityWhere(
-  serviceId: string,
+  serviceId: string | string[],
   modality: ServiceModality,
 ): Prisma.ProfessionalWhereInput {
+  const ids = normalizeServiceSelection(typeof serviceId === 'string' ? { serviceId } : { serviceIds: serviceId })
   return {
-    services: { some: { id: serviceId } },
+    ...(ids.length === 1 ? { services: { some: { id: ids[0] } } } : { AND: ids.map(id => ({ services: { some: { id } } })) }),
     modalities: { has: modality },
   }
 }
@@ -301,4 +316,3 @@ export function professionalFields(
     ? { professional: { kind: 'person', id: persona.id }, professionalName: persona.name }
     : { professional: NO_PROFESSIONAL, professionalName: '' }
 }
-

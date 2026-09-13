@@ -39,15 +39,20 @@ export async function applyBookingDiscountInTx(
     skipPackage?: boolean
     source: 'public_booking' | 'dashboard_booking'
     createdByUserId?: string
+    /** Authoritative catalogue lines, never client prices. One canje per booking. */
+    lines?: { serviceId: string; price: number }[]
   },
 ): Promise<ApplyResult | null> {
   const { businessId, customerId, serviceId, bookingId, totalPrice, source, createdByUserId } = args
 
   if (!args.skipPackage) {
-    const fromPackage = await applyPackageInTx(tx, {
-      businessId, customerId, serviceId, bookingId, totalPrice, source, createdByUserId,
-    })
-    if (fromPackage) return fromPackage
+    for (const line of args.lines ?? [{ serviceId, price: totalPrice }]) {
+      if (args.lines && line.price <= 0) continue // Do not spend a session on a free add-on.
+      const fromPackage = await applyPackageInTx(tx, {
+        businessId, customerId, serviceId: line.serviceId, bookingId, totalPrice: line.price, source, createdByUserId,
+      })
+      if (fromPackage) return { ...fromPackage, ...(args.lines ? { eligibleServiceIds: [line.serviceId] } : {}) }
+    }
   }
 
   return applyPromotionInTx(tx, {
@@ -59,5 +64,6 @@ export async function applyBookingDiscountInTx(
     bookingId,
     source,
     createdByUserId,
+    ...(args.lines ? { lines: args.lines } : {}),
   })
 }

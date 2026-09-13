@@ -1,3 +1,4 @@
+import { bookingServiceName } from '@/lib/bookings/service-lines'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { endOfLocalDay, startOfLocalDay } from '@/lib/availability/timezone'
@@ -79,7 +80,7 @@ export async function GET(request: NextRequest) {
       include: {
         booking: {
           include: {
-            service: true,
+            service: true, serviceLines: { select: { position: true, name: true } },
             customer: true,
           },
         },
@@ -134,7 +135,7 @@ export async function GET(request: NextRequest) {
         direction: entry.direction,
         customerName,
         customerPhone,
-        serviceName: entry.booking?.service?.name ?? null,
+        serviceName: entry.booking ? bookingServiceName(entry.booking) : null,
         bookingId: entry.bookingId,
         paymentId: entry.paymentId,
         amount: entry.amount,

@@ -1,5 +1,8 @@
 'use server'
 
+import { normalizeServiceSelection, resolveSelectedServices } from '@/lib/bookings/selection'
+import { allocateLineDiscount, snapshotServiceLines } from '@/lib/bookings/service-lines'
+
 import { prisma } from '@/lib/db'
 import { revalidatePath } from 'next/cache'
 import { addDays } from 'date-fns'
@@ -194,24 +197,32 @@ export const refundPackagePurchase = action(_refundPackagePurchase)
 // PÚBLICA (funnel): sin auth, patrón previewPromotion, defensiva. No lanza
 // throws propios (degrada a { remaining: 0 }); se envuelve con action() solo
 // como red de seguridad ante un throw inesperado (p. ej. checkRateLimit/Prisma).
-async function _getActivePackagesForCustomer(input: { businessId: string; phone: string; serviceId: string }): Promise<{ remaining: number }> {
+async function _getActivePackagesForCustomer(input: { businessId: string; phone: string; serviceId?: string; serviceIds?: string[] }): Promise<{ remaining: number; coveredServiceId?: string; coveredServiceName?: string; discountAmount?: number; depositRequired?: number }> {
   // Balde de rate-limit propio (no compartir con previewPromotion) para que el uso
   // intensivo de una feature no agote la otra por IP.
   const limit = await checkRateLimit('preview-package', 30, 60000)
   if (!limit.success) return { remaining: 0 }
+  const ids = normalizeServiceSelection(input)
   const normalized = normalizePhone(input.phone)
   if (!normalized) return { remaining: 0 }
   const customer = await prisma.customer.findFirst({ where: { businessId: input.businessId, phone: normalized }, select: { id: true } })
   if (!customer) return { remaining: 0 }
   const now = new Date()
-  const remaining = await prisma.promotionGrant.count({
+  const countFor = (serviceId: string) => prisma.promotionGrant.count({
     where: {
       businessId: input.businessId, customerId: customer.id, status: 'active', packagePurchaseId: { not: null },
       OR: [{ expiresAt: null }, { expiresAt: { gte: now } }],
-      packagePurchase: { status: 'active', OR: [{ coversAll: true }, { coveredServiceIds: { has: input.serviceId } }] },
+      packagePurchase: { status: 'active', OR: [{ coversAll: true }, { coveredServiceIds: { has: serviceId } }] },
     },
   })
-  return { remaining }
+  if (ids.length === 1) return { remaining: await countFor(ids[0]) }
+  const selection = resolveSelectedServices(input.businessId, ids, await prisma.service.findMany({ where: { id: { in: ids }, businessId: input.businessId, isActive: true } }))
+  const counts = await Promise.all(selection.services.map(service => service.price > 0 ? countFor(service.id) : Promise.resolve(0)))
+  const index = counts.findIndex(count => count > 0)
+  if (index < 0) return { remaining: 0 }
+  const covered = selection.services[index]
+  const lines = allocateLineDiscount(snapshotServiceLines(selection.services), covered.price, [covered.id])
+  return { remaining: counts[index], coveredServiceId: covered.id, coveredServiceName: covered.name, discountAmount: covered.price, depositRequired: lines.reduce((sum, line) => sum + line.depositAmount, 0) }
 }
 export const getActivePackagesForCustomer = action(_getActivePackagesForCustomer)
 

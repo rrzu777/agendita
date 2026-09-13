@@ -1,3 +1,4 @@
+import { bookingServiceName } from '@/lib/bookings/service-lines'
 import { Resend } from 'resend'
 import { prisma } from '@/lib/db'
 import { BookingStatus } from '@prisma/client'
@@ -501,7 +502,7 @@ export async function sendBookingConfirmedNotification(bookingId: string, busine
   const booking = await prisma.booking.findFirst({
     where: { id: bookingId, businessId, status: BookingStatus.confirmed },
     include: {
-      service: { select: { name: true } },
+      service: { select: { name: true } }, serviceLines: { select: { position: true, name: true } },
       professional: { select: { name: true } },
       customer: { select: { id: true, name: true, phone: true, email: true, loyaltyToken: true } },
       business: {
@@ -559,7 +560,7 @@ export async function sendBookingConfirmedNotification(bookingId: string, busine
     customerName: booking.customer.name,
     customerEmail: booking.customer.email,
     customerPhone: booking.customer.phone,
-    serviceName: booking.service.name,
+    serviceName: bookingServiceName(booking),
     professionalName: booking.professional?.name ?? null,
     startDateTime: booking.startDateTime,
     totalPrice: booking.totalPrice,
@@ -941,7 +942,7 @@ export async function sendPaymentReceivedNotification(
     include: {
       booking: {
         include: {
-          service: { select: { name: true } },
+          service: { select: { name: true } }, serviceLines: { select: { position: true, name: true } },
           customer: { select: { name: true, email: true } },
           business: { select: { name: true, timezone: true, currency: true } },
         },
@@ -963,7 +964,7 @@ export async function sendPaymentReceivedNotification(
     businessName: payment.booking.business.name,
     customerName: payment.booking.customer.name,
     customerEmail: payment.booking.customer.email,
-    serviceName: payment.booking.service.name,
+    serviceName: bookingServiceName(payment.booking),
     startDateTime: payment.booking.startDateTime,
     businessTimezone: payment.booking.business.timezone || 'America/Santiago',
     amountPaid: payment.amount,
@@ -973,7 +974,7 @@ export async function sendPaymentReceivedNotification(
   const text = paymentReceivedText({
     businessName: payment.booking.business.name,
     customerName: payment.booking.customer.name,
-    serviceName: payment.booking.service.name,
+    serviceName: bookingServiceName(payment.booking),
     startDateTime: payment.booking.startDateTime,
     businessTimezone: payment.booking.business.timezone || 'America/Santiago',
     amountPaid: payment.amount,

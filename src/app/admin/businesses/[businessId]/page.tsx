@@ -1,3 +1,4 @@
+import { bookingServiceName } from '@/lib/bookings/service-lines'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { notFound } from 'next/navigation'
@@ -38,7 +39,7 @@ export default async function BusinessDetailPage({ params }: BusinessDetailPageP
       },
       services: { orderBy: { sortOrder: 'asc' } },
       bookings: {
-        include: { service: true, customer: true },
+        include: { service: true, serviceLines: { select: { position: true, name: true } }, customer: true },
         orderBy: { startDateTime: 'desc' },
         take: 20,
       },
@@ -114,7 +115,7 @@ export default async function BusinessDetailPage({ params }: BusinessDetailPageP
                       <TableMobileCard
                         key={booking.id}
                         title={booking.customer?.name ?? '—'}
-                        subtitle={booking.service?.name ?? '—'}
+                        subtitle={bookingServiceName(booking)}
                         badge={<StatusBadge map="booking" status={booking.status} />}
                         rows={[
                           { label: 'Fecha', value: booking.startDateTime.toLocaleDateString('es-CL', { timeZone: tz }) },
@@ -142,7 +143,7 @@ export default async function BusinessDetailPage({ params }: BusinessDetailPageP
                             <TruncatedCell className="text-primary" primary={booking.customer?.name ?? '—'} />
                             <TruncatedCell
                               className={`${TABLE_COL.label} text-muted-foreground`}
-                              primary={booking.service?.name ?? '—'}
+                              primary={bookingServiceName(booking)}
                             />
                             <TableCell className={`${TABLE_COL.date} text-muted-foreground`}>
                               {booking.startDateTime.toLocaleDateString('es-CL', { timeZone: tz })}

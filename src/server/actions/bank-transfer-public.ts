@@ -1,5 +1,6 @@
 'use server'
 
+import { bookingServiceName } from '@/lib/bookings/service-lines'
 import { addHours } from 'date-fns'
 import { revalidatePath } from 'next/cache'
 import { Prisma, PaymentProvider, PaymentStatus, PaymentType } from '@prisma/client'
@@ -149,7 +150,7 @@ async function _declareBankTransfer(
       where: { id: bookingId },
       include: {
         business: { include: { bankTransferAccount: true } },
-        service: true,
+        service: true, serviceLines: { select: { position: true, name: true } },
         customer: true,
       },
     })
@@ -249,7 +250,7 @@ async function _declareBankTransfer(
         businessName: declared.booking.business.name,
         businessTimezone: declared.booking.business.timezone,
         customerName: declared.booking.customer.name,
-        serviceName: declared.booking.service?.name ?? 'servicio',
+        serviceName: bookingServiceName(declared.booking),
         startDateTime: declared.booking.startDateTime,
         amount: declared.amount,
         currency: declared.booking.business.currency || 'CLP',
@@ -284,7 +285,7 @@ async function _declareBalanceTransfer(
       where: { id: bookingId },
       include: {
         business: { include: { bankTransferAccount: true } },
-        service: true,
+        service: true, serviceLines: { select: { position: true, name: true } },
         customer: true,
       },
     })
@@ -386,7 +387,7 @@ async function _declareBalanceTransfer(
         businessName: declared.booking.business.name,
         businessTimezone: declared.booking.business.timezone,
         customerName: declared.booking.customer.name,
-        serviceName: declared.booking.service?.name ?? 'servicio',
+        serviceName: bookingServiceName(declared.booking),
         startDateTime: declared.booking.startDateTime,
         amount: declared.amount,
         currency: declared.booking.business.currency || 'CLP',

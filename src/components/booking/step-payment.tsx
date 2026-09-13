@@ -610,9 +610,6 @@ export function StepPayment({ data, updateData, businessId, timezone, currency, 
 
       const paymentRes = await initiatePayment({
         bookingId: booking.id,
-        amount: effectiveDeposit,
-        currency: 'CLP',
-        description: `Abono para ${data.serviceName}`,
       })
       if (!paymentRes.ok) {
         setErrorMessage(paymentRes.error)

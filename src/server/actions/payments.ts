@@ -1,5 +1,6 @@
 'use server'
 
+import { bookingServiceName } from '@/lib/bookings/service-lines'
 import { z } from 'zod'
 import { prisma } from '@/lib/db'
 import { PaymentProvider, PaymentStatus, PaymentType } from '@prisma/client'
@@ -67,7 +68,7 @@ async function _initiatePayment(data: {
   const booking = await prisma.booking.findUnique({
     where: { id: data.bookingId },
     include: {
-      service: true,
+      service: true, serviceLines: { select: { position: true, name: true } },
       business: {
         select: { slug: true, subdomain: true, currency: true, id: true },
       },
@@ -110,7 +111,7 @@ async function _initiatePayment(data: {
     throw new UserError('No se requiere pago para esta reserva')
   }
   const currency = booking.business.currency || 'CLP'
-  const description = `Abono para ${booking.service?.name || 'servicio'}`
+  const description = `Abono para ${bookingServiceName(booking)}`.slice(0, 255)
 
   const provider = await getOnlinePaymentProviderForBusiness(booking.businessId)
 

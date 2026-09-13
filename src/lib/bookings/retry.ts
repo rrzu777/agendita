@@ -34,9 +34,10 @@ function volverAElegir(motivo: string): UserError {
  * suelta la key y el caller sigue al camino de creación normal.
  */
 export async function resumeBookingForRetry<T extends Booking>(
-  existing: T,
+  existing: T & { serviceLines?: { serviceId: string; position: number }[] },
   ctx: {
     serviceId: string
+    serviceIds?: string[]
     startDateTime: Date
     professional: ProfessionalPick
     promotionCode?: string
@@ -63,8 +64,13 @@ export async function resumeBookingForRetry<T extends Booking>(
     ctx.professional.kind !== 'anyone' &&
     existing.professionalId !== (ctx.professional.kind === 'person' ? ctx.professional.id : null)
 
+  const existingIds = existing.serviceLines?.length
+    ? [...existing.serviceLines].sort((a, b) => a.position - b.position).map(line => line.serviceId)
+    : [existing.serviceId]
+  const requestedIds = ctx.serviceIds ?? [ctx.serviceId]
   if (
     existing.serviceId !== ctx.serviceId ||
+    existingIds.length !== requestedIds.length || existingIds.some((id, index) => id !== requestedIds[index]) ||
     existing.startDateTime.getTime() !== ctx.startDateTime.getTime() ||
     personaCambio
   ) {

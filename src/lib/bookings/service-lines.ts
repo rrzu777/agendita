@@ -60,3 +60,9 @@ export function bookingDurationMinutes(booking: { startDateTime: Date; endDateTi
   if (!Number.isSafeInteger(minutes) || minutes <= 0) throw new Error('Invalid persisted booking duration')
   return minutes
 }
+
+export function bookingServiceIds(booking: { serviceId: string; serviceLines?: { serviceId: string; position: number }[] }): string[] {
+  return booking.serviceLines?.length
+    ? [...booking.serviceLines].sort((a, b) => a.position - b.position).map(line => line.serviceId)
+    : [booking.serviceId]
+}

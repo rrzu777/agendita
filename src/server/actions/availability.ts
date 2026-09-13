@@ -20,6 +20,9 @@ import { acquireAdvisoryXactLock } from '@/lib/db/advisory-lock'
 import { assertOwnerScope, assertProfessionalOfBusiness, isProfessionalOfBusiness, PROFESSIONAL_UNAVAILABLE_MESSAGE } from '@/lib/professionals/ownership'
 import { action, UserError } from '@/lib/actions/result'
 import { isTerminalBookingStatus } from '@/lib/bookings/status-labels'
+import { normalizeServiceSelection, resolveSelectedServices } from '@/lib/bookings/selection'
+import { resolveBookingModality } from '@/lib/services/modality'
+import { assertProfessionalOffersService } from '@/lib/professionals/ownership'
 
 const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/
 
@@ -82,7 +85,8 @@ export async function getWeeklySchedule(professionalId: string | null) {
  */
 export interface AvailableSlotsInput {
   businessId: string
-  serviceId: string
+  serviceId?: string
+  serviceIds?: string[]
   date: Date
   /** Con quién se atiende. Ver `ProfessionalPick`: son tres casos, no un id nullable. */
   professional: ProfessionalPick
@@ -97,6 +101,7 @@ export interface AvailableSlotsInput {
 // decidir en cada caller.
 async function _getAvailableTimeSlots(input: AvailableSlotsInput) {
   const { businessId, serviceId, date } = input
+  const serviceIds = normalizeServiceSelection({ serviceId, serviceIds: input.serviceIds })
   // Esta action es PÚBLICA: el input entero llega del navegador. Un bundle viejo
   // durante un deploy manda un objeto sin este campo —y uno manipulado, cualquier
   // cosa—; las dos tienen que significar "sin persona", el funnel de siempre.
@@ -117,8 +122,13 @@ async function _getAvailableTimeSlots(input: AvailableSlotsInput) {
       where: { id: businessId, isActive: true },
       select: { id: true, timezone: true, bookingWindowDays: true, slotStepMinutes: true },
     }),
-    prisma.service.findFirst({
-      where: { id: serviceId, businessId, isActive: true },
+    serviceIds.length > 1 ? prisma.service.findMany({
+      where: { id: { in: serviceIds }, businessId, isActive: true },
+    }).then(rows => {
+      const selected = resolveSelectedServices(businessId, serviceIds, rows)
+      return { id: serviceIds[0], serviceIds, durationMinutes: selected.durationMinutes, modalities: selected.modalities }
+    }) : prisma.service.findFirst({
+      where: { id: serviceIds[0], businessId, isActive: true },
       select: { id: true, durationMinutes: true, modalities: true },
     }),
   ])
@@ -127,6 +137,9 @@ async function _getAvailableTimeSlots(input: AvailableSlotsInput) {
   }
   if (!service) {
     throw new UserError('Servicio no disponible')
+  }
+  if (serviceIds.length > 1 && professional.kind === 'none' && await prisma.professional.findFirst({ where: { businessId, isActive: true }, select: { id: true } })) {
+    throw new UserError('Elige un profesional que pueda realizar todos los servicios')
   }
 
   const timezone = business.timezone || 'America/Santiago'
@@ -160,7 +173,9 @@ async function _getAvailableTimeSlots(input: AvailableSlotsInput) {
   // Que las otras tres consultas corran con un id inválido no ensucia nada: el
   // throw de abajo pasa antes de que ningún resultado se use.
   const [profValido, availabilityRules, timeBlocks, bookings] = await Promise.all([
-    professionalId === null || isProfessionalOfBusiness(prisma, businessId, professionalId),
+    professionalId === null || (serviceIds.length > 1
+      ? assertProfessionalOffersService(prisma, businessId, professionalId, serviceIds, resolveBookingModality(service.modalities, input.modality))
+      : isProfessionalOfBusiness(prisma, businessId, professionalId)),
     resolveAvailabilityRules(prisma, businessId, professionalId),
     getEffectiveBlocks({
       businessId,
@@ -204,6 +219,7 @@ async function _getAvailableSlotsForReschedule(bookingId: string, date: Date) {
     where: { id: bookingId, businessId },
     include: {
       service: { select: { id: true, durationMinutes: true, name: true, isActive: true } },
+      serviceLines: { select: { serviceId: true } },
       business: { select: { timezone: true, bookingWindowDays: true, slotStepMinutes: true } },
     },
   })

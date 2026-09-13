@@ -52,13 +52,15 @@ Track 2a: implemented selection validation, immutable snapshot shapes, integer e
 
 **Interfaces:** A bounded selection normalizer accepts legacy `serviceId` or `serviceIds`; contradictory payloads reject. `resolveBookingDraft` produces authoritative ordered service lines and aggregate interval/amounts. BookingService snapshots persist with the same transaction as Booking. Legacy readers use one fallback line when no detail exists; new readers show all service names. A shared selection predicate checks EVERY selected service for professional eligibility.
 
-- [ ] Add pure tests for two services, duplicates, 11 services, mixed modalities and wrong tenant. Fixture: 45 min/$15000 plus 20 min/$4000 → 65 min/$19000.
-- [ ] Add detail model and indices; preserve existing rows and avoid fabricated historical snapshot claims. Keep scalar serviceId as compatibility pointer until all readers migrate.
-- [ ] Refactor authoritative draft and atomic create/manual-create to write all lines; include selection in replay identity and immutable snapshots.
-- [ ] Apply availability/eligibility and reschedule using the complete interval; reject active-team combinations with no shared professional.
-- [ ] Allocate discounts only across eligible lines, in integers; preserve package/promo precedence and transactional consumption/reversal. Keep aggregate amounts equal to line sums.
-- [ ] Migrate owner lists/calendar/detail, notifications, calendar invite, self-service and payment confirmation to all lines; add database concurrency and replay regressions.
-- [ ] Review, run integration/unit/typecheck/lint/build and commit before exposing multiselect UI.
+- [x] Add pure tests for two services, duplicates, 11 services, mixed modalities and wrong tenant. Fixture: 45 min/$15000 plus 20 min/$4000 → 65 min/$19000.
+- [x] Add detail model and indices; preserve existing rows and avoid fabricated historical snapshot claims. Keep scalar serviceId as compatibility pointer until all readers migrate.
+- [x] Refactor authoritative draft and atomic create/manual-create to write all lines; include selection in replay identity and immutable snapshots.
+- [x] Apply availability/eligibility and reschedule using the complete interval; reject active-team combinations with no shared professional.
+- [x] Allocate discounts only across eligible lines, in integers; preserve package/promo precedence and transactional consumption/reversal. Keep aggregate amounts equal to line sums.
+- [x] Migrate owner lists/calendar/detail, notifications, calendar invite, self-service and payment confirmation to all lines; add database concurrency and replay regressions.
+- [x] Review, run integration/unit/typecheck/lint/build and commit before exposing multiselect UI.
+
+Track 2b verification: independent first and second reviews completed; fixed transfer-email projections, zero-price free-service redemption and the long payment-description boundary. Real PostgreSQL multiservice 12 tests passed, including full cash payment, package cancellation/reversal, scoped coupons, persisted reschedule duration, eligibility, overlapping tail and concurrent replay. Focused integration run (including transfer emails and 50,000-event boundary) 51 passed. Full integration: 77 files/547 tests passed, one fixture-preparation timeout; that complete file passed isolated. Final full unit run: 450 files/4,088 tests passed, one skipped and one intermittent unrelated bank-transfer draft-recovery assertion; that unchanged file and policy settings passed isolated (18 tests). Earlier focused booking regressions 79 passed. Typecheck, lint, diff check and synthetic production build passed. Do not describe the full-suite runs as entirely green. Inherited reassignment eligibility is checked before its transaction, and catalogue snapshots represent the authoritative read before commit, not a catalogue-row lock; these are not new guarantees. No production mutations.
 
 Core invariants:
 

@@ -1,3 +1,4 @@
+import { bookingServiceName } from '@/lib/bookings/service-lines'
 import { addHours, subHours } from 'date-fns'
 import { BookingStatus, type Prisma, type PrismaClient } from '@prisma/client'
 import { prisma } from '@/lib/db'
@@ -92,7 +93,7 @@ export async function sendTransferReminders(
   const customerBookings = await db.booking.findMany({
     where: customerWhere,
     include: {
-      service: { select: { name: true } },
+      service: { select: { name: true } }, serviceLines: { select: { position: true, name: true } },
       customer: { select: { name: true, email: true } },
       business: {
         select: {
@@ -139,7 +140,7 @@ export async function sendTransferReminders(
             businessName: b.business.name,
             businessTimezone: b.business.timezone || 'America/Santiago',
             customerName: b.customer!.name,
-            serviceName: b.service?.name ?? 'servicio',
+            serviceName: bookingServiceName(b),
             depositAmount: Math.min(b.depositRequired, b.remainingBalance),
             businessCurrency: b.business.currency || 'CLP',
             // El plazo que se le promete va topado con la cita: el recordatorio
@@ -181,7 +182,7 @@ export async function sendTransferReminders(
   const businessBookings = await db.booking.findMany({
     where: businessWhere,
     include: {
-      service: { select: { name: true } },
+      service: { select: { name: true } }, serviceLines: { select: { position: true, name: true } },
       customer: { select: { name: true } },
       business: { select: { id: true, name: true, category: true } },
     },
@@ -209,7 +210,7 @@ export async function sendTransferReminders(
           deps.sendBusiness(b.business.id, {
             businessName: b.business.name,
             customerName: b.customer?.name ?? getVocabulary(b.business.category).theClient,
-            serviceName: b.service?.name ?? 'servicio',
+            serviceName: bookingServiceName(b),
             bookingNumber: b.bookingNumber,
           }),
         )

@@ -12,11 +12,15 @@ import type { PrismaClient, Prisma } from '@prisma/client'
 // UserError: estos mensajes son user-facing y deben sobrevivir al wrapper
 // action(); para callers sin wrapper es un Error normal (extends Error).
 import { UserError } from '@/lib/actions/result'
+import { normalizeServiceSelection } from '@/lib/bookings/selection'
 
 export interface AssertSlotInput {
   tx: PrismaClient | Prisma.TransactionClient
   businessId: string
   serviceId: string
+  serviceIds?: string[]
+  /** Internal reschedule only: duration derived from the stored interval, never browser input. */
+  persistedDurationMinutes?: number
   startDateTime: Date
   endDateTime: Date
   timezone: string
@@ -271,7 +275,10 @@ export async function assertSlotIsBookable(
     throw new UserError(SLOT_UNAVAILABLE_MESSAGE)
   }
 
-  const service = await tx.service.findFirst({
+  const ids = normalizeServiceSelection({ serviceId, serviceIds: input.serviceIds })
+  const service = ids.length > 1 ? await tx.service.findMany({
+    where: { id: { in: ids }, businessId, isActive: true }, select: { id: true, durationMinutes: true },
+  }).then(rows => rows.length === ids.length ? { durationMinutes: rows.reduce((sum, row) => sum + row.durationMinutes, 0) } : null) : await tx.service.findFirst({
     where: { id: serviceId, businessId, isActive: true },
     select: { durationMinutes: true },
   })
@@ -281,7 +288,7 @@ export async function assertSlotIsBookable(
   }
 
   const duration = differenceInMinutes(endDateTime, startDateTime)
-  if (duration !== service.durationMinutes) {
+  if (duration !== (input.persistedDurationMinutes ?? service.durationMinutes) || endDateTime.getTime() - startDateTime.getTime() !== duration * 60000) {
     logEvent('slot_validation_rejected', { businessId, reason: 'duration_mismatch' })
     throw new UserError(SLOT_UNAVAILABLE_MESSAGE)
   }

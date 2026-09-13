@@ -98,6 +98,7 @@ export async function rescheduleBookingInTx(
   input: {
     booking: {
       id: string; businessId: string; serviceId: string; startDateTime: Date
+      serviceLines?: { serviceId: string; position: number }[]
       internalNotes: string | null; professionalId: string | null
       /** Los cuatro que decide `isDoomedBooking`. Requeridos por el mismo motivo que
        *  en `assertBookingPayable`: sin ellos el guard no existe y la reserva se
@@ -135,6 +136,8 @@ export async function rescheduleBookingInTx(
     tx,
     businessId: booking.businessId,
     serviceId: booking.serviceId,
+    ...(booking.serviceLines?.length ? { serviceIds: [...booking.serviceLines].sort((a, b) => a.position - b.position).map(l => l.serviceId) } : {}),
+    persistedDurationMinutes: durationMinutes,
     startDateTime: newStartDateTime,
     endDateTime,
     timezone,
