@@ -16,12 +16,12 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  businesses BusinessUser[]
-  customers  Customer[]
-  authorizedPushSubscriptions PushSubscription[] @relation("PushSubscriptionAuthorizedUser")
-  tourProgress UserTourProgress[]
+  businesses                  BusinessUser[]
+  customers                   Customer[]
+  authorizedPushSubscriptions PushSubscription[]           @relation("PushSubscriptionAuthorizedUser")
+  tourProgress                UserTourProgress[]
   analyticsInsightPreferences AnalyticsInsightPreference[] @relation("AnalyticsInsightPreferenceRecipient")
-  analyticsEmailDeliveries AnalyticsEmailDelivery[] @relation("AnalyticsEmailDeliveryRecipient")
+  analyticsEmailDeliveries    AnalyticsEmailDelivery[]     @relation("AnalyticsEmailDeliveryRecipient")
 }
 
 enum SubscriptionStatus {
@@ -72,46 +72,54 @@ enum BusinessCategory {
   other
 }
 
+enum BusinessVisualStyle {
+  soft
+  balanced
+  contrast
+}
+
 model Business {
-  id                     String             @id @default(cuid())
-  name                   String
-  category               BusinessCategory   @default(other)
-  slug                   String             @unique
-  subdomain              String             @unique
-  customDomain           String?            @unique
-  ownerUserId            String
-  logoUrl                String?
-  profileImageUrl        String?
-  bio                    String?
-  whatsapp               String?
-  instagram              String?
-  addressText            String?
-  city                   String
-  country                String             @default("CL")
-  currency               String             @default("CLP")
-  timezone               String             @default("America/Santiago")
-  bookingWindowDays      Int                @default(90)
-  slotStepMinutes        Int?               @default(30) // cada cuántos min ofrecer inicios de hora; null = duración del servicio
-  selfServiceCutoffHours Int                @default(24) // ventana para cancelar/reprogramar self-service; 0 = sin límite (se usa en D1-b)
-  cancellationReminderEnabled Boolean       @default(true)
-  manualHoldHours        Int                @default(24) // cuánto se guarda el horario cuando el negocio coordina el abono a mano (sin MP ni transferencia); el funnel con pago online usa 15 min
-  bookingNumberSeq       Int                @default(1000)
-  requireTransferProof   Boolean            @default(false)
+  id                          String              @id @default(cuid())
+  name                        String
+  category                    BusinessCategory    @default(other)
+  brandColor                  String?
+  visualStyle                 BusinessVisualStyle @default(balanced)
+  slug                        String              @unique
+  subdomain                   String              @unique
+  customDomain                String?             @unique
+  ownerUserId                 String
+  logoUrl                     String?
+  profileImageUrl             String?
+  bio                         String?
+  whatsapp                    String?
+  instagram                   String?
+  addressText                 String?
+  city                        String
+  country                     String              @default("CL")
+  currency                    String              @default("CLP")
+  timezone                    String              @default("America/Santiago")
+  bookingWindowDays           Int                 @default(90)
+  slotStepMinutes             Int?                @default(30) // cada cuántos min ofrecer inicios de hora; null = duración del servicio
+  selfServiceCutoffHours      Int                 @default(24) // ventana para cancelar/reprogramar self-service; 0 = sin límite (se usa en D1-b)
+  cancellationReminderEnabled Boolean             @default(true)
+  manualHoldHours             Int                 @default(24) // cuánto se guarda el horario cuando el negocio coordina el abono a mano (sin MP ni transferencia); el funnel con pago online usa 15 min
+  bookingNumberSeq            Int                 @default(1000)
+  requireTransferProof        Boolean             @default(false)
   // Confirmación manual: las reservas que hoy se auto-confirmarían quedan
   // esperando el visto bueno del negocio. Sólo afecta a las que no piden abono;
   // cuando hay abono, el pago ya es el filtro (ver lib/bookings/approval.ts).
-  requireBookingApproval Boolean            @default(false)
+  requireBookingApproval      Boolean             @default(false)
   // Sala fija de videollamada (Zoom/Meet). Se copia a cada reserva online al
   // crearla, para que la clienta reciba el link en el email de una vez.
-  defaultMeetingUrl      String?
-  isActive               Boolean            @default(true)
-  planId                 String?
-  subscriptionStatus     SubscriptionStatus @default(trialing)
-  trialEndsAt            DateTime?
-  onboardingCompletedAt  DateTime?
-  onboardingStep         Int?
-  createdAt              DateTime           @default(now())
-  updatedAt              DateTime           @updatedAt
+  defaultMeetingUrl           String?
+  isActive                    Boolean             @default(true)
+  planId                      String?
+  subscriptionStatus          SubscriptionStatus  @default(trialing)
+  trialEndsAt                 DateTime?
+  onboardingCompletedAt       DateTime?
+  onboardingStep              Int?
+  createdAt                   DateTime            @default(now())
+  updatedAt                   DateTime            @updatedAt
 
   users                              BusinessUser[]
   services                           Service[]
@@ -146,16 +154,16 @@ model Business {
   campaigns                          Campaign[]
   customerPhotos                     CustomerPhoto[]
   professionals                      Professional[]
-  pushSubscriptions    PushSubscription[]
-  tourProgress         UserTourProgress[]
-  analyticsSessions    AnalyticsSession[]
-  analyticsAttempts    BookingFunnelAttempt[]
-  analyticsEvents      BookingFunnelEvent[]
-  acquisitionLinks     AcquisitionLink[]
-  analyticsPeriods     AnalyticsCollectionPeriod[]
-  analyticsDailyMetrics AnalyticsDailyMetric[]
-  analyticsInsightPreference AnalyticsInsightPreference?
-  weeklyInsights AnalyticsWeeklyInsight[]
+  pushSubscriptions                  PushSubscription[]
+  tourProgress                       UserTourProgress[]
+  analyticsSessions                  AnalyticsSession[]
+  analyticsAttempts                  BookingFunnelAttempt[]
+  analyticsEvents                    BookingFunnelEvent[]
+  acquisitionLinks                   AcquisitionLink[]
+  analyticsPeriods                   AnalyticsCollectionPeriod[]
+  analyticsDailyMetrics              AnalyticsDailyMetric[]
+  analyticsInsightPreference         AnalyticsInsightPreference?
+  weeklyInsights                     AnalyticsWeeklyInsight[]
 }
 
 enum PaymentAccountStatus {
@@ -196,15 +204,15 @@ model PaymentAccount {
 /// Intento OAuth corto y de un solo uso. Sólo se persiste el hash del nonce;
 /// el verifier PKCE permanece cifrado y se elimina lógicamente al consumir.
 model MercadoPagoOAuthAttempt {
-  id                String                  @id @default(cuid())
+  id                String                 @id @default(cuid())
   businessId        String
   environment       MercadoPagoEnvironment
-  nonceHash         String                  @unique
+  nonceHash         String                 @unique
   verifierEncrypted String
   createdByUserId   String
   expiresAt         DateTime
   consumedAt        DateTime?
-  createdAt         DateTime                @default(now())
+  createdAt         DateTime               @default(now())
 
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
@@ -380,26 +388,26 @@ model SubscriptionPayment {
 }
 
 model SubscriptionNotificationDelivery {
-  id             String    @id @default(cuid())
-  businessId     String
-  subscriptionId String
-  kind           String
-  effectiveDate  DateTime
-  eventAt        DateTime
-  availableAt    DateTime
-  eventId        String?
-  dedupeKey      String    @unique
-  status         String    @default("pending")
-  attempts       Int       @default(0)
-  sentAt         DateTime?
-  nextAttemptAt  DateTime?
-  lastErrorCode  String?
+  id                     String    @id @default(cuid())
+  businessId             String
+  subscriptionId         String
+  kind                   String
+  effectiveDate          DateTime
+  eventAt                DateTime
+  availableAt            DateTime
+  eventId                String?
+  dedupeKey              String    @unique
+  status                 String    @default("pending")
+  attempts               Int       @default(0)
+  sentAt                 DateTime?
+  nextAttemptAt          DateTime?
+  lastErrorCode          String?
   firstProviderAttemptAt DateTime?
-  manualReviewAt DateTime?
-  recipientEmails String[] @default([])
-  businessNameSnapshot String
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  manualReviewAt         DateTime?
+  recipientEmails        String[]  @default([])
+  businessNameSnapshot   String
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
 
   business     Business             @relation(fields: [businessId], references: [id], onDelete: Cascade)
   subscription BusinessSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
@@ -656,7 +664,7 @@ model Customer {
   packagePurchases   PackagePurchase[]
   campaignRecipients CampaignRecipient[]
   photos             CustomerPhoto[]
-  pushSubscriptions PushSubscription[]
+  pushSubscriptions  PushSubscription[]
 
   // Una ficha por (negocio, teléfono). Es la misma clave con la que
   // findOrCreateCustomerInTx resuelve la Customer, y reemplaza al índice no-único
@@ -675,7 +683,7 @@ model Customer {
 /// Immutable booking-time catalogue snapshots. Legacy bookings intentionally have no lines.
 /// serviceId is an audit identifier, not a cascading catalogue relation.
 model BookingService {
-  id              String @id @default(cuid())
+  id              String  @id @default(cuid())
   bookingId       String
   serviceId       String
   position        Int
@@ -683,7 +691,7 @@ model BookingService {
   durationMinutes Int
   price           Int
   depositAmount   Int
-  discountAmount  Int @default(0)
+  discountAmount  Int     @default(0)
   finalAmount     Int
   booking         Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
 
@@ -730,28 +738,28 @@ model Booking {
   /// si el negocio cambia de sala, las citas ya avisadas conservan la que se mandó.
   meetingUrl     String?
 
-  customerNotes     String?
-  internalNotes     String?
+  customerNotes                 String?
+  internalNotes                 String?
   /// Vencimiento del plazo para pagar una reserva `pending_payment`.
-  holdExpiresAt     DateTime?
+  holdExpiresAt                 DateTime?
   /// Vencimiento del plazo del negocio para responder una solicitud
   /// `pending_confirmation`. Vive separado del hold de pago porque nacen,
   /// vencen y se recalculan por reglas distintas.
-  approvalExpiresAt DateTime?
+  approvalExpiresAt             DateTime?
   cancellationCutoffHours       Int?
   cancellationPolicySnapshot    String?
   cancellationReminderClaimedAt DateTime?
   cancellationReminderSentAt    DateTime?
-  paymentMethod     String? // 'bank_transfer' si la clienta eligió transferencia; null = flujo actual/MP
-  idempotencyKey    String?
-  bookingNumber     Int?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  paymentMethod                 String? // 'bank_transfer' si la clienta eligió transferencia; null = flujo actual/MP
+  idempotencyKey                String?
+  bookingNumber                 Int?
+  createdAt                     DateTime  @default(now())
+  updatedAt                     DateTime  @updatedAt
 
-  business                       Business             @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  service                        Service              @relation(fields: [serviceId], references: [id], onDelete: NoAction)
+  business                       Business                  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  service                        Service                   @relation(fields: [serviceId], references: [id], onDelete: NoAction)
   serviceLines                   BookingService[]
-  customer                       Customer             @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  customer                       Customer                  @relation(fields: [customerId], references: [id], onDelete: Cascade)
   // NO SetNull: convertiría las citas de quien se borra en reservas sin persona,
   // que por la semántica de null chocan contra TODO el equipo — un salón de 4 se
   // queda sin agenda. Que la base se niegue es el guard de verdad; el mensaje
@@ -762,14 +770,14 @@ model Booking {
   // del statement. Al borrar un Business, Postgres cascadea a Booking y a
   // Professional en el mismo statement y sin orden garantizado: con Restrict, si
   // le toca la persona antes que sus reservas, el borrado del negocio explota.
-  professional                   Professional?        @relation(fields: [professionalId], references: [id], onDelete: NoAction)
+  professional                   Professional?             @relation(fields: [professionalId], references: [id], onDelete: NoAction)
   payments                       Payment[]
   ledgerEntries                  LedgerEntry[]
   redemption                     PromotionRedemption?
   review                         Review?
   loyaltyLedger                  LoyaltyLedger[]
   photos                         CustomerPhoto[]
-  reviewToken                    String?              @unique
+  reviewToken                    String?                   @unique
   reviewTokenCreatedAt           DateTime?
   reminderSentAt                 DateTime?
   transferReminderCustomerSentAt DateTime? // CAS del recordatorio a la clienta (pre-declaración)
@@ -778,22 +786,21 @@ model Booking {
 
   // Optional verified scalar snapshot: never a FK and never part of booking idempotency.
   analyticsVersion              Int?
-  analyticsConsentVersion      Int?
-  analyticsSessionId            String? @db.Uuid
-  analyticsAttemptId            String? @db.Uuid
+  analyticsConsentVersion       Int?
+  analyticsSessionId            String?           @db.Uuid
+  analyticsAttemptId            String?           @db.Uuid
   analyticsAttemptStartedAt     DateTime?
   analyticsConversionDeadlineAt DateTime?
   analyticsRetentionExpiresAt   DateTime?
   analyticsChannel              AnalyticsChannel?
   analyticsNormalizationVersion Int?
   analyticsAcquisitionLinkId    String?
-  analyticsSelectionRevision   Int?
-
-  @@index([businessId, analyticsAttemptId, createdAt])
-  @@index([analyticsRetentionExpiresAt, id])
+  analyticsSelectionRevision    Int?
 
   @@unique([businessId, idempotencyKey])
   @@unique([businessId, bookingNumber])
+  @@index([businessId, analyticsAttemptId, createdAt])
+  @@index([analyticsRetentionExpiresAt, id])
   @@index([businessId, status, startDateTime, endDateTime])
   // Agenda por rango de fechas sin filtro de status (getBookingsInRange):
   // el índice de arriba arranca por status, así que no sirve para esta query.
@@ -955,78 +962,78 @@ enum AnalyticsInsightAttemptStatus {
 }
 
 model AnalyticsJobHeartbeat {
-  jobKey                 String            @id @db.VarChar(64)
-  currentRunId           String?           @db.Uuid
-  leaseToken             String?           @db.Uuid
-  leaseExpiresAt         DateTime?
-  lastStartedAt          DateTime?
-  lastCompletedAt        DateTime?
-  lastSuccessAt          DateTime?
-  lastProgressAt         DateTime?
-  lastStatus             AnalyticsJobStatus?
-  nextBatchSequence      Int?
-  runErrors              Int               @default(0)
-  consecutiveFailures    Int               @default(0)
-  consecutiveSuccesses   Int               @default(0)
-  circuitOpenUntil       DateTime?
-  probeLeaseUntil        DateTime?
-  lastResult             Json?
-  updatedAt              DateTime          @updatedAt
+  jobKey               String              @id @db.VarChar(64)
+  currentRunId         String?             @db.Uuid
+  leaseToken           String?             @db.Uuid
+  leaseExpiresAt       DateTime?
+  lastStartedAt        DateTime?
+  lastCompletedAt      DateTime?
+  lastSuccessAt        DateTime?
+  lastProgressAt       DateTime?
+  lastStatus           AnalyticsJobStatus?
+  nextBatchSequence    Int?
+  runErrors            Int                 @default(0)
+  consecutiveFailures  Int                 @default(0)
+  consecutiveSuccesses Int                 @default(0)
+  circuitOpenUntil     DateTime?
+  probeLeaseUntil      DateTime?
+  lastResult           Json?
+  updatedAt            DateTime            @updatedAt
 
   @@index([lastStatus, lastSuccessAt])
   @@index([leaseExpiresAt])
 }
 
 model AnalyticsOperationalIncident {
-  id                       String                              @id @default(uuid()) @db.Uuid
-  activeKey                String?                             @unique @db.VarChar(160)
-  incidentType             AnalyticsIncidentType
-  severity                 AnalyticsIncidentSeverity
-  openedAt                 DateTime
-  lastObservedAt           DateTime
-  resolvedAt               DateTime?
-  lastNotifiedSeverity     AnalyticsIncidentSeverity?
-  lastNotificationAt       DateTime?
-  notificationAttempts     Int                                 @default(0)
-  lastNotificationStatus   AnalyticsIncidentNotificationStatus?
-  lastNotificationCode     String?                             @db.VarChar(64)
-  details                  Json
-  healthySince             DateTime?
-  retentionExpiresAt       DateTime?
-  updatedAt                DateTime                            @updatedAt
-  deliveries               AnalyticsEmailDelivery[]
+  id                     String                               @id @default(uuid()) @db.Uuid
+  activeKey              String?                              @unique @db.VarChar(160)
+  incidentType           AnalyticsIncidentType
+  severity               AnalyticsIncidentSeverity
+  openedAt               DateTime
+  lastObservedAt         DateTime
+  resolvedAt             DateTime?
+  lastNotifiedSeverity   AnalyticsIncidentSeverity?
+  lastNotificationAt     DateTime?
+  notificationAttempts   Int                                  @default(0)
+  lastNotificationStatus AnalyticsIncidentNotificationStatus?
+  lastNotificationCode   String?                              @db.VarChar(64)
+  details                Json
+  healthySince           DateTime?
+  retentionExpiresAt     DateTime?
+  updatedAt              DateTime                             @updatedAt
+  deliveries             AnalyticsEmailDelivery[]
 
   @@index([incidentType, resolvedAt])
   @@index([retentionExpiresAt])
 }
 
 model AnalyticsEmailDelivery {
-  id                    String                         @id @default(uuid()) @db.Uuid
-  incidentId            String?                        @db.Uuid
-  weeklyInsightId       String?                        @db.Uuid
-  recipientUserId       String?
-  dedupeKey             String                         @unique @db.VarChar(220)
-  notificationKind      AnalyticsEmailNotificationKind
-  payloadHash           String                         @db.Char(64)
-  recipients            Json
-  subject               String                         @db.VarChar(200)
-  htmlBody              String                         @db.Text
-  textBody              String                         @db.Text
-  status                AnalyticsEmailDeliveryStatus  @default(pending)
-  leaseToken            String?                        @db.Uuid
-  leaseExpiresAt        DateTime?
+  id                     String                         @id @default(uuid()) @db.Uuid
+  incidentId             String?                        @db.Uuid
+  weeklyInsightId        String?                        @db.Uuid
+  recipientUserId        String?
+  dedupeKey              String                         @unique @db.VarChar(220)
+  notificationKind       AnalyticsEmailNotificationKind
+  payloadHash            String                         @db.Char(64)
+  recipients             Json
+  subject                String                         @db.VarChar(200)
+  htmlBody               String                         @db.Text
+  textBody               String                         @db.Text
+  status                 AnalyticsEmailDeliveryStatus   @default(pending)
+  leaseToken             String?                        @db.Uuid
+  leaseExpiresAt         DateTime?
   firstProviderAttemptAt DateTime?
-  attempts              Int                            @default(0)
-  nextAttemptAt         DateTime?
-  providerMessageId     String?                        @db.VarChar(160)
-  lastFailureCode       String?                        @db.VarChar(64)
-  sentAt                DateTime?
-  retentionExpiresAt    DateTime
-  createdAt             DateTime                       @default(now())
-  updatedAt             DateTime                       @updatedAt
-  incident              AnalyticsOperationalIncident?  @relation(fields: [incidentId], references: [id], onDelete: Cascade)
-  weeklyInsight         AnalyticsWeeklyInsight?        @relation(fields: [weeklyInsightId], references: [id], onDelete: Cascade)
-  recipientUser         User?                          @relation("AnalyticsEmailDeliveryRecipient", fields: [recipientUserId], references: [id], onDelete: SetNull)
+  attempts               Int                            @default(0)
+  nextAttemptAt          DateTime?
+  providerMessageId      String?                        @db.VarChar(160)
+  lastFailureCode        String?                        @db.VarChar(64)
+  sentAt                 DateTime?
+  retentionExpiresAt     DateTime
+  createdAt              DateTime                       @default(now())
+  updatedAt              DateTime                       @updatedAt
+  incident               AnalyticsOperationalIncident?  @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  weeklyInsight          AnalyticsWeeklyInsight?        @relation(fields: [weeklyInsightId], references: [id], onDelete: Cascade)
+  recipientUser          User?                          @relation("AnalyticsEmailDeliveryRecipient", fields: [recipientUserId], references: [id], onDelete: SetNull)
 
   @@index([status, nextAttemptAt])
   @@index([incidentId])
@@ -1036,43 +1043,43 @@ model AnalyticsEmailDelivery {
 }
 
 model AnalyticsInsightPreference {
-  id                String   @id @default(uuid()) @db.Uuid
-  businessId        String   @unique
-  recipientUserId   String?
-  enabled           Boolean  @default(false)
-  aiNarrativeEnabled Boolean @default(false)
-  emailEnabled      Boolean  @default(false)
-  privacyVersion    Int?
-  acceptedAt        DateTime?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-  business          Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  recipientUser     User?    @relation("AnalyticsInsightPreferenceRecipient", fields: [recipientUserId], references: [id], onDelete: SetNull)
+  id                 String    @id @default(uuid()) @db.Uuid
+  businessId         String    @unique
+  recipientUserId    String?
+  enabled            Boolean   @default(false)
+  aiNarrativeEnabled Boolean   @default(false)
+  emailEnabled       Boolean   @default(false)
+  privacyVersion     Int?
+  acceptedAt         DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  business           Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  recipientUser      User?     @relation("AnalyticsInsightPreferenceRecipient", fields: [recipientUserId], references: [id], onDelete: SetNull)
 
   @@index([recipientUserId])
 }
 
 model AnalyticsWeeklyInsight {
-  id                    String                         @id @default(uuid()) @db.Uuid
-  businessId            String
-  weekStart             DateTime                       @db.Date
-  weekEnd               DateTime                       @db.Date
-  businessTimeZone      String                         @db.VarChar(100)
-  sourceConsentVersion  Int
-  status                AnalyticsInsightStatus
-  generationStatus      AnalyticsInsightGenerationStatus @default(not_requested)
-  facts                 Json
-  narrative             Json?
-  reasonCode            String?                        @db.VarChar(64)
-  inputHash             String                         @db.Char(64)
-  sourceExpiresAt       DateTime
-  retentionExpiresAt    DateTime
-  narrativeGeneratedAt  DateTime?
-  createdAt             DateTime                       @default(now())
-  updatedAt             DateTime                       @updatedAt
-  business              Business                       @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  generationAttempts    AnalyticsInsightGenerationAttempt[]
-  deliveries            AnalyticsEmailDelivery[]
+  id                   String                              @id @default(uuid()) @db.Uuid
+  businessId           String
+  weekStart            DateTime                            @db.Date
+  weekEnd              DateTime                            @db.Date
+  businessTimeZone     String                              @db.VarChar(100)
+  sourceConsentVersion Int
+  status               AnalyticsInsightStatus
+  generationStatus     AnalyticsInsightGenerationStatus    @default(not_requested)
+  facts                Json
+  narrative            Json?
+  reasonCode           String?                             @db.VarChar(64)
+  inputHash            String                              @db.Char(64)
+  sourceExpiresAt      DateTime
+  retentionExpiresAt   DateTime
+  narrativeGeneratedAt DateTime?
+  createdAt            DateTime                            @default(now())
+  updatedAt            DateTime                            @updatedAt
+  business             Business                            @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  generationAttempts   AnalyticsInsightGenerationAttempt[]
+  deliveries           AnalyticsEmailDelivery[]
 
   @@unique([businessId, weekStart])
   @@index([businessId, status, weekStart])
@@ -1102,25 +1109,25 @@ model AnalyticsInsightGenerationAttempt {
 }
 
 model AnalyticsSession {
-  id                    String @id @default(uuid()) @db.Uuid
-  businessId            String
-  bootstrapKey          String @db.Uuid
-  origin                String @db.VarChar(300)
-  consentVersion        Int
-  definitionVersion     Int
-  startedAt             DateTime
-  expiresAt             DateTime
-  retentionExpiresAt    DateTime
-  businessTimeZone       String @db.VarChar(100)
-  cohortLocalDate        DateTime @db.Date
-  channel               AnalyticsChannel
-  normalizationVersion  Int
-  acquisitionLinkId     String?
-  acceptedEventCount    Int @default(0)
-  knownCaptureGap       Boolean @default(false)
-  business              Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  attempts              BookingFunnelAttempt[]
-  events                BookingFunnelEvent[]
+  id                   String                 @id @default(uuid()) @db.Uuid
+  businessId           String
+  bootstrapKey         String                 @db.Uuid
+  origin               String                 @db.VarChar(300)
+  consentVersion       Int
+  definitionVersion    Int
+  startedAt            DateTime
+  expiresAt            DateTime
+  retentionExpiresAt   DateTime
+  businessTimeZone     String                 @db.VarChar(100)
+  cohortLocalDate      DateTime               @db.Date
+  channel              AnalyticsChannel
+  normalizationVersion Int
+  acquisitionLinkId    String?
+  acceptedEventCount   Int                    @default(0)
+  knownCaptureGap      Boolean                @default(false)
+  business             Business               @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  attempts             BookingFunnelAttempt[]
+  events               BookingFunnelEvent[]
 
   @@unique([businessId, id])
   @@unique([businessId, bootstrapKey])
@@ -1129,28 +1136,28 @@ model AnalyticsSession {
 }
 
 model BookingFunnelAttempt {
-  id                    String @id @default(uuid()) @db.Uuid
-  businessId            String
-  sessionId             String @db.Uuid
-  bootstrapKey          String @db.Uuid
-  origin                String @db.VarChar(300)
-  consentVersion        Int @default(1)
-  startedAt             DateTime
-  conversionDeadlineAt  DateTime
-  retentionExpiresAt    DateTime
-  entryKind             AnalyticsEntryKind
-  definitionVersion     Int
-  flowVersion           Int @default(1)
-  businessTimeZone      String @db.VarChar(100)
-  cohortLocalDate       DateTime @db.Date
-  channel               AnalyticsChannel
-  normalizationVersion  Int
-  acquisitionLinkId     String?
-  acceptedEventCount    Int @default(0)
-  knownCaptureGap       Boolean @default(false)
-  business              Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  session               AnalyticsSession @relation(fields: [businessId, sessionId], references: [businessId, id], onDelete: Cascade)
-  events                BookingFunnelEvent[]
+  id                   String               @id @default(uuid()) @db.Uuid
+  businessId           String
+  sessionId            String               @db.Uuid
+  bootstrapKey         String               @db.Uuid
+  origin               String               @db.VarChar(300)
+  consentVersion       Int                  @default(1)
+  startedAt            DateTime
+  conversionDeadlineAt DateTime
+  retentionExpiresAt   DateTime
+  entryKind            AnalyticsEntryKind
+  definitionVersion    Int
+  flowVersion          Int                  @default(1)
+  businessTimeZone     String               @db.VarChar(100)
+  cohortLocalDate      DateTime             @db.Date
+  channel              AnalyticsChannel
+  normalizationVersion Int
+  acquisitionLinkId    String?
+  acceptedEventCount   Int                  @default(0)
+  knownCaptureGap      Boolean              @default(false)
+  business             Business             @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  session              AnalyticsSession     @relation(fields: [businessId, sessionId], references: [businessId, id], onDelete: Cascade)
+  events               BookingFunnelEvent[]
 
   @@unique([businessId, sessionId, id])
   @@unique([businessId, bootstrapKey])
@@ -1160,28 +1167,28 @@ model BookingFunnelAttempt {
 }
 
 model BookingFunnelEvent {
-  id                   String @id @default(uuid()) @db.Uuid
-  businessId           String
-  sessionId            String @db.Uuid
-  attemptId            String? @db.Uuid
-  eventId              String @db.Uuid
-  version              Int
-  scope                AnalyticsEventScope
-  type                 AnalyticsEventType
-  streamKey            String @db.VarChar(50)
-  sequence             Int
-  selectionRevision    Int?
-  fingerprint          String @db.Char(64)
-  data                 Json
+  id                 String                @id @default(uuid()) @db.Uuid
+  businessId         String
+  sessionId          String                @db.Uuid
+  attemptId          String?               @db.Uuid
+  eventId            String                @db.Uuid
+  version            Int
+  scope              AnalyticsEventScope
+  type               AnalyticsEventType
+  streamKey          String                @db.VarChar(50)
+  sequence           Int
+  selectionRevision  Int?
+  fingerprint        String                @db.Char(64)
+  data               Json
   // Historical dimension IDs intentionally have no service/professional FKs.
-  serviceId            String?
-  modality             ServiceModality?
-  professionalId       String?
-  receivedAt           DateTime @default(now())
-  retentionExpiresAt   DateTime
-  business             Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  session              AnalyticsSession @relation(fields: [businessId, sessionId], references: [businessId, id], onDelete: Cascade)
-  attempt              BookingFunnelAttempt? @relation(fields: [businessId, sessionId, attemptId], references: [businessId, sessionId, id], onDelete: Cascade)
+  serviceId          String?
+  modality           ServiceModality?
+  professionalId     String?
+  receivedAt         DateTime              @default(now())
+  retentionExpiresAt DateTime
+  business           Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  session            AnalyticsSession      @relation(fields: [businessId, sessionId], references: [businessId, id], onDelete: Cascade)
+  attempt            BookingFunnelAttempt? @relation(fields: [businessId, sessionId, attemptId], references: [businessId, sessionId, id], onDelete: Cascade)
 
   @@unique([businessId, eventId])
   @@unique([businessId, streamKey, sequence])
@@ -1192,55 +1199,55 @@ model BookingFunnelEvent {
 }
 
 model AcquisitionLink {
-  id             String @id @default(cuid())
-  businessId     String
-  token          String @unique @db.VarChar(64)
-  channel        AnalyticsChannel
-  campaignName   String @db.VarChar(100)
-  promotionId    String?
-  createdAt      DateTime @default(now())
-  archivedAt     DateTime?
-  business       Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  id           String           @id @default(cuid())
+  businessId   String
+  token        String           @unique @db.VarChar(64)
+  channel      AnalyticsChannel
+  campaignName String           @db.VarChar(100)
+  promotionId  String?
+  createdAt    DateTime         @default(now())
+  archivedAt   DateTime?
+  business     Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   @@unique([businessId, id])
   @@index([businessId, archivedAt, createdAt])
 }
 
 model AnalyticsCollectionPeriod {
-  id                   String @id @default(uuid()) @db.Uuid
-  businessId           String
-  definitionVersion    Int
-  consentVersion       Int
-  businessTimeZone     String @db.VarChar(100)
-  startedAt            DateTime
-  endedAt              DateTime?
-  closeReason          String? @db.VarChar(32)
-  business             Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  id                String    @id @default(uuid()) @db.Uuid
+  businessId        String
+  definitionVersion Int
+  consentVersion    Int
+  businessTimeZone  String    @db.VarChar(100)
+  startedAt         DateTime
+  endedAt           DateTime?
+  closeReason       String?   @db.VarChar(32)
+  business          Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   @@index([businessId, startedAt, id])
 }
 
 model AnalyticsDailyMetric {
-  id                   String @id @default(uuid()) @db.Uuid
-  businessId           String
-  cohortLocalDate      DateTime @db.Date
-  businessTimeZone     String @db.VarChar(100)
-  definitionVersion    Int
-  consentVersion       Int              @default(1)
-  population           AnalyticsPopulation
-  grain                AnalyticsGrain
-  dimensionKey         String @db.VarChar(128)
-  metricKey            String @db.VarChar(64)
-  numerator            Int
-  denominator          Int
-  revision             Int
-  state                AnalyticsPublicationState
-  coverage             AnalyticsCoverageState
-  calculatedAt         DateTime
-  cutoffAt             DateTime
-  frozenAt             DateTime?
-  retentionExpiresAt   DateTime
-  business             Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  id                 String                    @id @default(uuid()) @db.Uuid
+  businessId         String
+  cohortLocalDate    DateTime                  @db.Date
+  businessTimeZone   String                    @db.VarChar(100)
+  definitionVersion  Int
+  consentVersion     Int                       @default(1)
+  population         AnalyticsPopulation
+  grain              AnalyticsGrain
+  dimensionKey       String                    @db.VarChar(128)
+  metricKey          String                    @db.VarChar(64)
+  numerator          Int
+  denominator        Int
+  revision           Int
+  state              AnalyticsPublicationState
+  coverage           AnalyticsCoverageState
+  calculatedAt       DateTime
+  cutoffAt           DateTime
+  frozenAt           DateTime?
+  retentionExpiresAt DateTime
+  business           Business                  @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   @@unique([businessId, cohortLocalDate, businessTimeZone, definitionVersion, consentVersion, population, grain, dimensionKey, metricKey], map: "AnalyticsDailyMetric_cell_key")
   @@index([businessId, cohortLocalDate])
@@ -1324,11 +1331,11 @@ model Payment {
   rawPayload           Json?
   createdAt            DateTime                @default(now())
 
-  business        Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  booking         Booking?         @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  packagePurchase PackagePurchase? @relation(fields: [packagePurchaseId], references: [id], onDelete: Cascade)
-  customer        Customer         @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  ledgerEntries   LedgerEntry[]
+  business          Business                  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  booking           Booking?                  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  packagePurchase   PackagePurchase?          @relation(fields: [packagePurchaseId], references: [id], onDelete: Cascade)
+  customer          Customer                  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  ledgerEntries     LedgerEntry[]
   providerIncidents PaymentProviderIncident[]
 
   // Evita duplicar exactamente el mismo pago para la misma reserva.

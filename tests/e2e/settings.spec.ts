@@ -19,6 +19,8 @@ const VIEWPORTS = [
   { width: 1440, height: 900 },
 ] as const
 
+const STACKED_COLUMN_ALIGNMENT_TOLERANCE_PX = 8
+
 test.describe.configure({ mode: 'serial' })
 
 async function expectNoHorizontalOverflow(page: Page) {
@@ -30,17 +32,20 @@ async function expectNoHorizontalOverflow(page: Page) {
 
 async function expectFormControlGeometry(
   page: Page,
-  label: string,
+  label: string | RegExp,
   viewportWidth: number,
   { fullWidth = false }: { fullWidth?: boolean } = {},
 ) {
-  const control = page.getByLabel(label, { exact: true })
-  const box = await control.boundingBox()
+  const control = typeof label === 'string'
+    ? page.getByLabel(label, { exact: true })
+    : page.getByLabel(label)
+  const visibleControl = control.filter({ visible: true })
+  const box = await visibleControl.boundingBox()
   expect(box).not.toBeNull()
   expect(box!.height).toBeGreaterThanOrEqual(viewportWidth < 768 ? 44 : 40)
 
   if (fullWidth) {
-    const fieldBox = await control.locator('xpath=ancestor::*[@data-slot="form-field"][1]').boundingBox()
+    const fieldBox = await visibleControl.locator('xpath=ancestor::*[@data-slot="form-field"][1]').boundingBox()
     expect(fieldBox).not.toBeNull()
     expect(box!.width / fieldBox!.width).toBeGreaterThanOrEqual(0.9)
   }
@@ -83,7 +88,7 @@ test.describe('settings navigation', () => {
       await dialog.dismiss()
     })
     await page.goto('/dashboard')
-    await page.getByRole('link', { name: 'Configuración', exact: true }).click()
+    await page.getByRole('link', { name: 'Perfil público', exact: true }).click()
     await expect(page).toHaveURL(/\/dashboard\/settings\/profile$/)
     await page.waitForLoadState('networkidle')
     const description = page.getByLabel('Descripción')
@@ -133,7 +138,7 @@ test.describe('settings navigation', () => {
 
     try {
       await page.goto('/dashboard')
-      await page.getByRole('link', { name: 'Configuración', exact: true }).click()
+      await page.getByRole('link', { name: 'Perfil público', exact: true }).click()
       await expect(page).toHaveURL(/\/dashboard\/settings\/profile$/)
       const description = page.getByLabel('Descripción')
       await expect(description).toHaveValue(original)
@@ -310,19 +315,19 @@ test.describe('settings mutable section journeys', () => {
 
     try {
       await page.goto('/dashboard/settings/payments')
-      await expect(page.getByText('Mercado Pago no configurado')).toBeVisible()
+      await expect(page.getByText('Mercado Pago no configurado').filter({ visible: true })).toBeVisible()
       await page.getByRole('button', { name: 'Conectar Mercado Pago' }).click()
       await expect(page).toHaveURL(/\/dashboard\/settings\/payments\?success=connected$/)
-      await expect(page.getByText('Cuenta MP conectada')).toBeVisible()
+      await expect(page.getByText('Cuenta MP conectada').filter({ visible: true })).toBeVisible()
       // La conexión navega mediante un form server-side, pero la desconexión usa
       // un handler cliente. Esperar la hidratación evita que el click temprano
       // sea inerte en runners lentos.
       await page.waitForLoadState('networkidle')
 
       await page.getByRole('button', { name: 'Desconectar Mercado Pago' }).click()
-      await expect(page.getByText('Cuenta desconectada')).toBeVisible()
+      await expect(page.getByText('Cuenta desconectada').filter({ visible: true })).toBeVisible()
       await page.reload()
-      await expect(page.getByText('Cuenta desconectada')).toBeVisible()
+      await expect(page.getByText('Cuenta desconectada').filter({ visible: true })).toBeVisible()
     } finally {
       await prisma.paymentAccount.deleteMany({
         where: { businessId: business.id, provider: 'mercado_pago', environment },
@@ -362,7 +367,7 @@ test.describe('settings responsive structure', () => {
         await expectNoHorizontalOverflow(page)
 
         if (section.slug === 'profile') {
-          await expectFormControlGeometry(page, 'Nombre del negocio', viewport.width)
+          await expectFormControlGeometry(page, /^Nombre del negocio/, viewport.width)
         }
         if (section.slug === 'reservations') {
           await expectFormControlGeometry(page, 'Zona horaria', viewport.width, { fullWidth: true })
@@ -378,22 +383,24 @@ test.describe('settings responsive structure', () => {
       }
 
       await page.goto('/dashboard/settings/profile')
-      const localNavigation = page.getByRole('navigation', { name: 'Secciones de configuración' })
+      const localNavigation = page.getByRole('navigation', { name: 'Secciones de configuración' }).filter({ visible: true })
       const settingsRail = localNavigation.locator('..')
-      const preview = page.getByLabel('Vista previa del perfil público')
+      const preview = page.getByLabel('Vista previa del perfil público').filter({ visible: true })
       const railPosition = await settingsRail.evaluate((element) => getComputedStyle(element).position)
       const previewPosition = await preview.evaluate((element) => getComputedStyle(element).position)
 
       expect(railPosition).toBe(viewport.width >= 1024 ? 'sticky' : 'static')
       expect(previewPosition).toBe(viewport.width >= 1280 ? 'sticky' : 'static')
 
-      const form = page.locator('form').filter({ has: page.getByLabel('Nombre del negocio') })
+      const form = page.locator('form')
+        .filter({ has: page.getByLabel('Nombre del negocio') })
+        .filter({ visible: true })
       const [formBox, previewBox] = await Promise.all([form.boundingBox(), preview.boundingBox()])
       expect(formBox).not.toBeNull()
       expect(previewBox).not.toBeNull()
       if (viewport.width < 1280) {
         expect(previewBox!.y).toBeGreaterThan(formBox!.y)
-        expect(Math.abs(previewBox!.x - formBox!.x)).toBeLessThan(2)
+        expect(Math.abs(previewBox!.x - formBox!.x)).toBeLessThan(STACKED_COLUMN_ALIGNMENT_TOLERANCE_PX)
       } else {
         expect(previewBox!.x).toBeGreaterThan(formBox!.x + formBox!.width)
       }

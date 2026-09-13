@@ -29,10 +29,14 @@ const profileValues: ProfileSettingsInput = {
   addressText: '',
   city: 'Santiago',
   subdomain: 'mi-negocio',
+  brandColor: '#B64D68',
+  visualStyle: 'soft',
 }
 
 function getInput(container: HTMLElement, label: string) {
-  const labelElement = Array.from(container.querySelectorAll('label')).find((element) => element.textContent === label)
+  const labelElement = Array.from(container.querySelectorAll('label')).find(
+    (element) => element.textContent?.replace('*', '').trim() === label,
+  )
   const inputId = labelElement?.getAttribute('for')
   const input = inputId ? container.querySelector<HTMLInputElement | HTMLTextAreaElement>(`#${inputId}`) : null
   if (!input) throw new Error(`Input not found for ${label}`)
@@ -94,7 +98,7 @@ describe('ProfileSettingsForm', () => {
   } = {}) {
     const form = (
       <UnsavedChangesProvider>
-        <ProfileSettingsForm businessId="biz-1" slug="mi-negocio" initialValues={initialValues} />
+        <ProfileSettingsForm businessId="biz-1" slug="mi-negocio" category="other" initialValues={initialValues} />
       </UnsavedChangesProvider>
     )
     await act(async () => {
@@ -105,8 +109,15 @@ describe('ProfileSettingsForm', () => {
   it('uses the shared form field and dashboard density for every profile control', async () => {
     await renderProfile()
 
-    expect(container.querySelectorAll('[data-slot="form-field"]')).toHaveLength(9)
-    expect(container.querySelectorAll('[data-density="form"]')).toHaveLength(9)
+    expect(container.querySelectorAll('[data-slot="form-field"]')).toHaveLength(11)
+    expect(container.querySelectorAll('[data-density="form"]')).toHaveLength(10)
+    expect(container.textContent).toContain('Estilo visual')
+    expect(container.textContent).toContain('Suave')
+    expect(container.textContent).toContain('Equilibrado')
+    expect(container.textContent).toContain('Contraste')
+    expect(getInput(container, 'Nombre del negocio').getAttribute('aria-required')).toBe('true')
+    expect(getInput(container, 'Descripción').getAttribute('aria-required')).toBe('false')
+    expect(container.textContent).toContain('Opcional')
   })
 
   it('submits profile fields only and replaces dirty values with the normalized response', async () => {
@@ -177,6 +188,26 @@ describe('ProfileSettingsForm', () => {
     await setInput(container, 'Nombre del negocio', 'Mi Negocio nuevo')
 
     expect(Array.from(container.querySelectorAll('h2')).some((heading) => heading.textContent === 'Mi Negocio nuevo')).toBe(true)
+  })
+
+  it('submits the tenant color and non-gendered visual style', async () => {
+    mockUpdateProfile.mockResolvedValue({
+      ok: true,
+      data: { ...profileValues, brandColor: '#35524A', visualStyle: 'contrast' },
+    })
+    await renderProfile()
+
+    await setInput(container, 'Color de marca', '#35524a')
+    const contrast = container.querySelector<HTMLInputElement>('input[value="contrast"]')
+    expect(contrast).not.toBeNull()
+    await act(async () => contrast?.click())
+    await submit(container)
+
+    expect(mockUpdateProfile).toHaveBeenCalledWith(expect.objectContaining({
+      brandColor: '#35524A',
+      visualStyle: 'contrast',
+    }))
+    expect(getInput(container, 'Color de marca').value).toBe('#35524A')
   })
 
   it('keeps values and shows a reserved subdomain error returned by the action', async () => {
@@ -271,5 +302,22 @@ describe('ProfileSettingsForm', () => {
     expect(html).toMatch(/CiudadConUnTokenExcepcionalmenteLargoSinEspacios<\/p>/)
     expect(html).toMatch(/class="[^"]*break-words[^"]*"[^>]*>CiudadConUnTokenExcepcionalmenteLargoSinEspacios<\/p>/)
     expect(html).toMatch(/class="[^"]*break-words[^"]*"[^>]*>DescripciónConUnTokenExcepcionalmenteLargoSinEspacios<\/p>/)
+  })
+
+  it('previews the category fallback when no custom color is set', () => {
+    const html = renderToStaticMarkup(
+      <PublicProfilePreview
+        name="Barbería Central"
+        city="Santiago"
+        bio=""
+        logoUrl=""
+        publicUrl="https://barberia.example.com"
+        category="barber"
+        brandColor=""
+        visualStyle="contrast"
+      />,
+    )
+
+    expect(html).toContain('border-top-color:#35524A')
   })
 })

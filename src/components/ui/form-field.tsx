@@ -4,6 +4,7 @@ import { Label } from '@/components/ui/label'
 export type FormFieldA11yProps = {
   'aria-describedby': string | undefined
   'aria-invalid': boolean
+  'aria-required': boolean
 }
 
 type FormFieldProps = {
@@ -12,6 +13,7 @@ type FormFieldProps = {
   help?: ReactNode
   error?: string
   required?: boolean
+  optional?: boolean
   layout?: 'stacked' | 'inline'
   children: (a11y: FormFieldA11yProps) => ReactNode
 }
@@ -22,6 +24,7 @@ export function FormField({
   help,
   error,
   required = false,
+  optional = false,
   layout = 'stacked',
   children,
 }: FormFieldProps) {
@@ -29,14 +32,18 @@ export function FormField({
   const errorId = error ? `${id}-error` : undefined
   const describedBy = [helpId, errorId].filter(Boolean).join(' ') || undefined
   const labelElement = (
-    <Label htmlFor={id}>
-      {label}
-      {required && <span aria-hidden="true"> *</span>}
-    </Label>
+    <div className="flex items-baseline justify-between gap-3">
+      <Label htmlFor={id}>
+        {label}
+        {required && <span aria-hidden="true"> *</span>}
+      </Label>
+      {optional && <span className="text-xs text-muted-foreground">Opcional</span>}
+    </div>
   )
   const control = children({
     'aria-describedby': describedBy,
     'aria-invalid': Boolean(error),
+    'aria-required': required,
   })
 
   return (

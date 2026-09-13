@@ -17,9 +17,11 @@ describe('section settings schemas', () => {
       name: ' Mi Negocio ', bio: '', profileImageUrl: '', logoUrl: '',
       whatsapp: '', instagram: '', addressText: '', city: ' Santiago ',
       subdomain: 'Mi-Negocio',
+      brandColor: '#B64D68', visualStyle: 'soft',
     })
 
     expect(parsed).toMatchObject({ name: 'Mi Negocio', city: 'Santiago', subdomain: 'mi-negocio' })
+    expect(parsed).toMatchObject({ brandColor: '#B64D68', visualStyle: 'soft' })
     expect('timezone' in parsed).toBe(false)
   })
 
@@ -44,6 +46,25 @@ describe('section settings schemas', () => {
 })
 
 describe('profileSettingsSchema', () => {
+  it('normalizes a custom brand color and rejects unsafe values', () => {
+    expect(profileSettingsSchema.parse({
+      name: 'Test', city: 'Santiago', subdomain: 'test', brandColor: '#b64d68', visualStyle: 'balanced',
+    }).brandColor).toBe('#B64D68')
+
+    expect(profileSettingsSchema.safeParse({
+      name: 'Test', city: 'Santiago', subdomain: 'test', brandColor: 'red;url(x)', visualStyle: 'balanced',
+    }).success).toBe(false)
+  })
+
+  it('accepts only the maintained visual style names', () => {
+    expect(profileSettingsSchema.safeParse({
+      name: 'Test', city: 'Santiago', subdomain: 'test', visualStyle: 'contrast',
+    }).success).toBe(true)
+    expect(profileSettingsSchema.safeParse({
+      name: 'Test', city: 'Santiago', subdomain: 'test', visualStyle: 'masculine',
+    }).success).toBe(false)
+  })
+
   it('accepts valid data', () => {
     const result = profileSettingsSchema.safeParse({
       name: 'Mi Estudio',

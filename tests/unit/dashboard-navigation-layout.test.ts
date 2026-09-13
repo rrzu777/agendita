@@ -24,6 +24,27 @@ describe('dashboard navigation and action layout', () => {
     expect(sidebar).toContain("'min-h-0 flex-1 overflow-y-auto'")
   })
 
+  it('renders the eight global destinations and their secondary routes from grouped navigation', () => {
+    const sidebar = source('src/components/dashboard/sidebar.tsx')
+    const mobileMore = source('src/components/dashboard/mobile-more-menu.tsx')
+
+    expect(sidebar).toContain('getDashboardNavGroups')
+    expect(sidebar).toContain('group.items')
+    expect(sidebar).toContain('aria-expanded')
+    expect(mobileMore).toContain('groups.map')
+    expect(mobileMore).toContain('group.items.map')
+    expect(sidebar).not.toContain('collapsed || !hasChildren')
+    expect(sidebar).toContain('title={collapsed ? item.label : undefined}')
+  })
+
+  it('reserves the mobile safe area in both navigation and page content', () => {
+    const sidebar = source('src/components/dashboard/sidebar.tsx')
+    const layout = source('src/app/dashboard/layout.tsx')
+
+    expect(sidebar).toContain('env(safe-area-inset-bottom)')
+    expect(layout).toContain('env(safe-area-inset-bottom)')
+  })
+
   it('routes dashboard-owned links and sign-out through the unsaved-change guard', () => {
     const sidebar = source('src/components/dashboard/sidebar.tsx')
     const layout = source('src/app/dashboard/layout.tsx')

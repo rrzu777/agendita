@@ -85,6 +85,8 @@ async function _updateProfileSettings(data: ProfileSettingsInput) {
         addressText: trimToNull(validated.addressText),
         city: validated.city,
         subdomain: validated.subdomain,
+        brandColor: trimToNull(validated.brandColor),
+        visualStyle: validated.visualStyle,
       },
       select: {
         name: true,
@@ -96,6 +98,8 @@ async function _updateProfileSettings(data: ProfileSettingsInput) {
         addressText: true,
         city: true,
         subdomain: true,
+        brandColor: true,
+        visualStyle: true,
       },
     })
   } catch (error) {
@@ -118,6 +122,8 @@ async function _updateProfileSettings(data: ProfileSettingsInput) {
     addressText: updated.addressText ?? '',
     city: updated.city,
     subdomain: updated.subdomain,
+    brandColor: updated.brandColor ?? '',
+    visualStyle: updated.visualStyle,
   } satisfies ProfileSettingsInput
 }
 

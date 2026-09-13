@@ -249,7 +249,7 @@ describe('DashboardTourProvider', () => {
           <Controls />
           {withCompactHelp && <TourHelpMenu compact />}
           {withInvitation && <TourInvitation />}
-          {withMobileMore && <MobileMoreMenu items={[]} pathname={pathname} onSignOut={() => undefined} />}
+          {withMobileMore && <MobileMoreMenu groups={[]} pathname={pathname} onSignOut={() => undefined} />}
         </DashboardTourProvider>
       </UnsavedChangesProvider>,
     ))

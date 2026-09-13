@@ -30,6 +30,8 @@ export async function verifySettingsDraftBaseline(scope: SettingsDraftScope, fin
           addressText: true,
           city: true,
           subdomain: true,
+          brandColor: true,
+          visualStyle: true,
         },
       })
       current = toProfileSettingsFormValues(business)

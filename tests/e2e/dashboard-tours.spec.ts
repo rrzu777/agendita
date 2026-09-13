@@ -27,23 +27,26 @@ const SETTINGS_TOUR = {
 } as const
 
 const OWNER_MORE_DESTINATIONS = [
+  'Clientes',
   'Servicios',
   'Profesionales',
-  'Horarios',
-  'Clientes',
-  'Pagos',
+  'Disponibilidad',
+  'Métricas',
   'Promociones',
   'Fidelización',
   'Campañas',
   'Paquetes',
-  'Métricas',
-  'Facturación',
   'Reseñas',
-  'Configuración',
+  'Cobros',
+  'Plan y facturación',
+  'Perfil público',
+  'Reservas',
+  'Políticas y avisos',
+  'Pagos',
 ] as const
 
 const STAFF_MORE_DESTINATIONS = OWNER_MORE_DESTINATIONS.filter((label) => (
-  label !== 'Facturación' && label !== 'Configuración' && label !== 'Métricas'
+  !['Métricas', 'Plan y facturación', 'Perfil público', 'Reservas', 'Políticas y avisos', 'Pagos'].includes(label)
 ))
 
 async function createDashboardFixture({
@@ -290,8 +293,8 @@ test('staff mobile navigation is role-filtered and never offers tours', async ({
       await expect(moreNavigation.getByRole('link', { name: label, exact: true })).toBeVisible()
     }
     await expect(moreNavigation.getByRole('link')).toHaveCount(STAFF_MORE_DESTINATIONS.length)
-    await expect(moreNavigation.getByRole('link', { name: 'Configuración', exact: true })).toHaveCount(0)
-    await expect(moreNavigation.getByRole('link', { name: 'Facturación', exact: true })).toHaveCount(0)
+    await expect(moreNavigation.getByRole('link', { name: 'Perfil público', exact: true })).toHaveCount(0)
+    await expect(moreNavigation.getByRole('link', { name: 'Plan y facturación', exact: true })).toHaveCount(0)
     await expect(moreNavigation.getByRole('link', { name: 'Métricas', exact: true })).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Ayuda y recorridos' })).toHaveCount(0)
     await expectNoHorizontalOverflow(page)

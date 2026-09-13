@@ -4,6 +4,12 @@ const nameField = z.string().max(100).transform(v => v.trim()).refine(v => v.len
 const bioField = z.string().max(500).optional()
 const optionalUrlField = z.string().url('URL inválida').optional().or(z.literal(''))
 const optionalStringField = z.string().optional().or(z.literal(''))
+const brandColorField = z.string()
+  .trim()
+  .regex(/^#[0-9a-fA-F]{6}$/, 'Usa un color hexadecimal como #B64D68')
+  .transform(value => value.toUpperCase())
+  .optional()
+  .or(z.literal(''))
 const cityField = z.string().transform(v => v.trim()).refine(v => v.length > 0, 'La ciudad es obligatoria')
 const subdomainField = z.string()
   .min(3, 'Mínimo 3 caracteres')
@@ -53,6 +59,8 @@ export const profileSettingsSchema = z.object({
   addressText: optionalStringField,
   city: cityField,
   subdomain: subdomainField,
+  brandColor: brandColorField,
+  visualStyle: z.enum(['soft', 'balanced', 'contrast']).default('balanced'),
 })
 
 export const reservationSettingsSchema = z.object({
