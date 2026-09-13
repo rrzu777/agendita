@@ -5,6 +5,7 @@ import {
   MessageSquareText, Package, ReceiptText, Scissors, Settings, Sparkles, Star, Ticket, Users, UsersRound,
 } from 'lucide-react'
 import type { Vocabulary } from '@/lib/vocabulary'
+import { SETTINGS_SECTIONS, type SettingsSectionKey } from '@/lib/business/settings-navigation'
 
 export type DashboardNavItem = {
   href: string
@@ -26,6 +27,12 @@ export type DashboardNavGroup = {
 
 const operationalRoles: BusinessRole[] = ['owner', 'admin', 'staff']
 const managementRoles: BusinessRole[] = ['owner', 'admin']
+const settingsIcons: Record<SettingsSectionKey, LucideIcon> = {
+  profile: Settings,
+  reservations: CalendarDays,
+  policies: MessageSquareText,
+  payments: CreditCard,
+}
 
 function dashboardNavDefinitions(vocabulary: Vocabulary): DashboardNavItem[] {
   return [
@@ -44,7 +51,14 @@ function dashboardNavDefinitions(vocabulary: Vocabulary): DashboardNavItem[] {
     { href: '/dashboard/metricas', label: 'Métricas', icon: ChartNoAxesCombined, roles: managementRoles, mobile: 'more', tourId: 'dashboard-analytics' },
     { href: '/dashboard/billing', label: 'Plan y facturación', icon: ReceiptText, roles: managementRoles, mobile: 'more', tourId: 'dashboard-billing' },
     { href: '/dashboard/reviews', label: 'Reseñas', icon: Star, roles: operationalRoles, mobile: 'more', tourId: 'dashboard-reviews' },
-    { href: '/dashboard/settings', label: 'Configuración', icon: Settings, roles: managementRoles, mobile: 'more', tourId: 'dashboard-settings' },
+    ...SETTINGS_SECTIONS.map((section) => ({
+      href: section.href,
+      label: section.label,
+      icon: settingsIcons[section.key],
+      roles: managementRoles,
+      mobile: 'more' as const,
+      tourId: `dashboard-settings-${section.key}`,
+    })),
   ]
 }
 
@@ -70,7 +84,7 @@ export function getDashboardNavGroups(vocabulary: Vocabulary, role: BusinessRole
     group('catalogue', 'Catálogo', ['/dashboard/services', '/dashboard/equipo', '/dashboard/availability'], Scissors),
     group('growth', 'Crecimiento', ['/dashboard/metricas', '/dashboard/promociones', '/dashboard/fidelizacion', '/dashboard/campanas', '/dashboard/paquetes', '/dashboard/reviews'], ChartNoAxesCombined),
     group('finance', 'Finanzas', ['/dashboard/payments', '/dashboard/billing'], CreditCard),
-    group('settings', 'Configuración', ['/dashboard/settings'], Settings),
+    group('settings', 'Configuración', SETTINGS_SECTIONS.map((section) => section.href), Settings),
   ].filter((item): item is DashboardNavGroup => item !== null)
 }
 

@@ -10,6 +10,8 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-13-full-ui-redesign-design.md`
 
+**Route ledger:** `docs/superpowers/audits/2026-09-13-route-redesign-coverage.md`
+
 ## Global Constraints
 
 - Read relevant guides from `node_modules/next/dist/docs/` before changing Next.js layouts, styling or route behavior.
@@ -25,6 +27,7 @@
 
 **Files:**
 - Create: `DESIGN.md`, `UX-CONTRACT.md`, `premium-ui.json`
+- Create: `docs/superpowers/audits/2026-09-13-route-redesign-coverage.md`
 - Create: `src/lib/theme/business-theme.ts`
 - Create: `src/components/theme/business-theme.tsx`
 - Create: `src/components/dashboard/dashboard-context-nav.tsx`
@@ -56,7 +59,7 @@
 - [ ] Implement pure theme resolver and React wrapper; map output only to semantic CSS custom properties.
 - [ ] Reconcile global tokens, scrollbar, focus, motion and forced-colors rules in `globals.css`.
 - [ ] Write failing navigation tests proving eight destinations, group children, role filtering and active parent state.
-- [ ] Implement desktop groups, tablet rail and four-item mobile navigation without losing unsaved-change or tour behavior.
+- [ ] Implement desktop groups, tablet rail and four-item mobile navigation; expose every functional child of Catálogo, Crecimiento, Finanzas and Configuración without losing unsaved-change or tour behavior.
 - [ ] Extend profile schema/action/form/preview with labelled style choices and a validated hex color.
 - [ ] Run targeted tests, DESIGN lint, Premium strict audit, Impeccable detector, lint, typecheck and build.
 - [ ] Browser-test dashboard/settings at three widths and at least soft + contrast tenant themes.
@@ -85,6 +88,7 @@
 - [ ] Migrate Services/Equipo/Disponibilidad under Catálogo context navigation.
 - [ ] Verify role matrix, table overflow/stacked states, dialogs, loading and narrow viewport.
 - [ ] Complete review/fix/re-review/verification, PR, exact-HEAD CI review and merge.
+- [ ] Update the route ledger with the exact automated and browser evidence collected for routes 1–10 and 25.
 
 ### Task 3: PR 3 — growth, finance, settings and admin
 
@@ -104,6 +108,7 @@
 - [ ] Reconcile all settings forms to the required/optional and save/recovery contract.
 - [ ] Migrate admin with explicit zero-data and account-health states.
 - [ ] Complete full track QA, review/fix/re-review, PR, CI and merge.
+- [ ] Update the route ledger with the exact automated and browser evidence collected for routes 11–24 and 26–27.
 
 ### Task 4: PR 4 — public profile and booking journey
 
@@ -123,6 +128,7 @@
 - [ ] Reconcile payment/policy presentation against actual offered methods and existing terminal states.
 - [ ] Exercise success, verifying, rejected, pending, expired, cancelled and retry states at three widths.
 - [ ] Complete review/fix/re-review, full booking E2E, PR, CI and merge.
+- [ ] Update the route ledger with the exact automated and browser evidence collected for routes 28–31.
 
 ### Task 5: PR 5 — client account, packages, loyalty, platform and final route sweep
 
@@ -135,10 +141,13 @@
 **Interfaces:** completes the spec; no new independent theme or shell implementation is allowed.
 
 - [ ] Migrate client multi-business home and tenant detail with reservation management intact.
+- [ ] Add the client shell: business switcher at `/mi`, local Próximas/Historial/Beneficios/Preferencias navigation at `/mi/[slug]`, persistent Reservar action and contextual reprogramming.
 - [ ] Migrate package purchase/confirmation and loyalty card/link states without changing financial lifecycle.
 - [ ] Migrate review, notification, opt-out and install states with explicit recovery.
 - [ ] Separate owner auth, client auth, marketing and legal registers while sharing tokens.
 - [ ] Audit all 53 routes for canonical shell, title, loading/error, mobile actions and raw legacy tokens.
+- [ ] Update the route ledger with the exact automated and browser evidence collected for routes 32–53.
+- [ ] Recompute the `page.tsx` inventory and fail the sweep if any current route is absent from the route ledger.
 - [ ] Run full unit/integration/E2E/build/static/visual matrix and production-safe smoke tests.
 - [ ] Complete final review/fix/re-review, PR, CI, merge and exact production deployment verification.
 

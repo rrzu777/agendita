@@ -122,13 +122,11 @@ export function DashboardSidebar({ user, business, role }: DashboardSidebarProps
               const isActive = isDashboardNavGroupActive(group, pathname)
               const hasChildren = group.items.length > 1
               const isOpen = openGroups.has(group.key) || isActive
-              const onlyItem = group.items[0]
 
               return (
                 <li key={group.key}>
                   {!hasChildren ? (
                     <GuardedLink
-                      data-tour-id={onlyItem.href === '/dashboard/settings' ? 'payments-settings' : undefined}
                       href={group.href}
                       aria-current={isActive ? 'page' : undefined}
                       title={collapsed ? group.label : undefined}
@@ -148,6 +146,7 @@ export function DashboardSidebar({ user, business, role }: DashboardSidebarProps
                       <button
                         type="button"
                         onClick={() => toggleGroup(group.key)}
+                        data-tour-id={group.key === 'settings' ? 'payments-settings' : undefined}
                         aria-expanded={isOpen}
                         aria-label={collapsed ? group.label : undefined}
                         title={collapsed ? group.label : undefined}

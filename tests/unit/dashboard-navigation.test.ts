@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { getDashboardNavGroups, getDashboardNavItems, isDashboardNavGroupActive, isDashboardNavItemActive } from '@/lib/dashboard/navigation'
+import { SETTINGS_SECTIONS } from '@/lib/business/settings-navigation'
 
 const vocabulary = { Professionals: 'Profesionales', Clients: 'Clientes' } as never
 
@@ -18,11 +19,17 @@ describe('dashboard navigation registry', () => {
       '/dashboard/metricas', '/dashboard/promociones', '/dashboard/fidelizacion',
       '/dashboard/campanas', '/dashboard/paquetes', '/dashboard/reviews',
     ])
+    expect(groups.find((group) => group.label === 'Configuración')?.items.map(({ href, label }) => ({ href, label }))).toEqual(
+      SETTINGS_SECTIONS.map(({ href, label }) => ({ href, label })),
+    )
   })
 
   it('keeps settings and billing out of staff navigation', () => {
     const hrefs = getDashboardNavItems(vocabulary, 'staff').map((item) => item.href)
-    expect(hrefs).not.toContain('/dashboard/settings')
+    expect(hrefs).not.toContain('/dashboard/settings/profile')
+    expect(hrefs).not.toContain('/dashboard/settings/reservations')
+    expect(hrefs).not.toContain('/dashboard/settings/policies')
+    expect(hrefs).not.toContain('/dashboard/settings/payments')
     expect(hrefs).not.toContain('/dashboard/billing')
     expect(hrefs).not.toContain('/dashboard/metricas')
     expect(hrefs).toContain('/dashboard/bookings')
@@ -32,8 +39,10 @@ describe('dashboard navigation registry', () => {
   it('exposes every destination to owner and admin', () => {
     for (const role of ['owner', 'admin'] as const) {
       const hrefs = getDashboardNavItems(vocabulary, role).map((item) => item.href)
-      expect(hrefs).toHaveLength(16)
+      expect(hrefs).toHaveLength(19)
       expect(hrefs).toContain('/dashboard/metricas')
+      expect(hrefs).toContain('/dashboard/settings/profile')
+      expect(hrefs).toContain('/dashboard/settings/payments')
     }
   })
 

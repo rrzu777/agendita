@@ -60,7 +60,7 @@ Route-backed contextual navigation:
 - Finanzas: Cobros, Plan y facturación.
 - Configuración: Perfil, Reservas, Políticas, Pagos.
 
-Desktop uses a 248 px sidebar. Tablet uses an 82 px rail with accessible labels/tooltips. Phone uses Hoy, Calendario, Reservas and Más; Más exposes every role-permitted remaining destination. Onboarding, create/edit and details remain contextual rather than global destinations.
+Desktop uses a 248 px sidebar. Tablet uses an 82 px rail with accessible labels/tooltips. Phone uses Hoy, Calendario, Reservas and Más; Más exposes every role-permitted remaining destination. The grouped sidebar exposes every functional child of Catálogo, Crecimiento, Finanzas and Configuración; the local contextual navigation remains visible inside those sections for orientation. Onboarding, create/edit and details remain contextual rather than global destinations.
 
 ### 4. Shared page structures
 
@@ -89,7 +89,7 @@ The UI must not claim a payment method exists when the business/provider configu
 
 ### 7. Client, platform and admin
 
-The client account (`/mi`), packages, loyalty, reviews, notifications and opt-out share a tenant-first public shell. Owner auth uses the product shell; client auth uses the client register. Landing/legal/admin are migrated to the same tokens without inheriting irrelevant dashboard navigation.
+The client account (`/mi`), packages, loyalty, reviews, notifications and opt-out share a tenant-first public shell. `/mi` is the multi-business switcher. Within `/mi/[slug]`, a compact client navigation exposes Próximas, Historial, Beneficios and Preferencias, while Reservar remains the primary action; reprogramming is contextual to a reservation. Owner auth uses the product shell; client auth uses the client register. Landing/legal/admin are migrated to the same tokens without inheriting irrelevant dashboard navigation.
 
 ### 8. Content and accessibility
 
@@ -107,6 +107,8 @@ All current `page.tsx` routes are covered:
 - Owner/admin: 27 routes under `/dashboard` and `/admin`.
 - Public/client: `/`, `/b/[slug]`, `/book`, `/book/[slug]`, confirmation, `/mi` family, packages, loyalty card/link, review, notifications, opt-out and install.
 - Access/legal: owner login/register/recovery, client login and the three legal pages.
+
+The exact route-to-shell, discovery and delivery mapping lives in `docs/superpowers/audits/2026-09-13-route-redesign-coverage.md`; route inventory drift is a release failure.
 
 Route aliases share canonical surfaces; they do not fork styling or behavior.
 

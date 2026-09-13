@@ -263,7 +263,7 @@ test.describe('main beta flows', () => {
     await expect(page.getByText(serviceName)).toBeVisible({ timeout: 15000 })
     await page.waitForLoadState('networkidle')
 
-    await page.getByRole('link', { name: 'Horarios' }).click()
+    await page.getByRole('link', { name: 'Disponibilidad' }).click()
     await page.waitForURL('**/dashboard/availability')
     await selectTime(page, 'Lunes inicio', '10', '00')
     await page.getByRole('button', { name: 'Guardar', exact: true }).click()

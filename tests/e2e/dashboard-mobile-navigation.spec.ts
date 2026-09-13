@@ -22,13 +22,13 @@ test.describe('dashboard mobile navigation', () => {
     await page.setViewportSize({ width: 375, height: 812 })
   })
 
-  test('keeps the primary destinations visible and exposes Payments and Settings through Más', async ({ page }) => {
+  test('keeps the primary destinations visible and exposes finance and settings sections through Más', async ({ page }) => {
     test.setTimeout(60_000)
     await page.goto('/dashboard')
 
     const primaryNavigation = page.getByRole('navigation', { name: 'Navegación principal del dashboard' })
     await expect(primaryNavigation.getByRole('link')).toHaveCount(3)
-    await expect(primaryNavigation.getByRole('link', { name: 'Resumen', exact: true })).toBeVisible()
+    await expect(primaryNavigation.getByRole('link', { name: 'Hoy', exact: true })).toBeVisible()
     await expect(primaryNavigation.getByRole('link', { name: 'Reservas', exact: true })).toBeVisible()
     await expect(primaryNavigation.getByRole('link', { name: 'Calendario', exact: true })).toBeVisible()
 
@@ -37,17 +37,17 @@ test.describe('dashboard mobile navigation', () => {
     await moreButton.click()
 
     const moreNavigation = page.getByRole('navigation', { name: 'Más secciones del dashboard' })
-    await expect(moreNavigation.getByRole('link', { name: 'Pagos', exact: true })).toBeVisible()
-    await moreNavigation.getByRole('link', { name: 'Pagos', exact: true }).click()
+    await expect(moreNavigation.getByRole('link', { name: 'Cobros', exact: true })).toBeVisible()
+    await moreNavigation.getByRole('link', { name: 'Cobros', exact: true }).click()
     await expect(page).toHaveURL('/dashboard/payments')
 
     await moreButton.click()
-    await expect(moreNavigation.getByRole('link', { name: 'Pagos', exact: true })).toHaveAttribute('aria-current', 'page')
-    await moreNavigation.getByRole('link', { name: 'Configuración', exact: true }).click()
+    await expect(moreNavigation.getByRole('link', { name: 'Cobros', exact: true })).toHaveAttribute('aria-current', 'page')
+    await moreNavigation.getByRole('link', { name: 'Perfil público', exact: true }).click()
     await expect(page).toHaveURL('/dashboard/settings/profile', { timeout: 30_000 })
 
     await moreButton.click()
-    await expect(moreNavigation.getByRole('link', { name: 'Configuración', exact: true })).toHaveAttribute('aria-current', 'page')
+    await expect(moreNavigation.getByRole('link', { name: 'Perfil público', exact: true })).toHaveAttribute('aria-current', 'page')
     await page.keyboard.press('Escape')
     await expect(moreButton).toBeFocused()
     await expectNoHorizontalOverflow(page)
@@ -73,14 +73,14 @@ test.describe('dashboard mobile navigation', () => {
 
     await page.getByRole('button', { name: 'Más opciones' }).click()
     const moreNavigation = page.getByRole('navigation', { name: 'Más secciones del dashboard' })
-    await moreNavigation.getByRole('link', { name: 'Pagos', exact: true }).click()
+    await moreNavigation.getByRole('link', { name: 'Cobros', exact: true }).click()
 
     await expect(page.getByRole('dialog')).toContainText('Cambios sin guardar')
     await page.getByRole('button', { name: 'Seguir editando' }).click()
     await expect(page).toHaveURL('/dashboard/settings/profile')
-    await expect(moreNavigation.getByRole('link', { name: 'Pagos', exact: true })).toBeVisible()
+    await expect(moreNavigation.getByRole('link', { name: 'Cobros', exact: true })).toBeVisible()
 
-    await moreNavigation.getByRole('link', { name: 'Pagos', exact: true }).click()
+    await moreNavigation.getByRole('link', { name: 'Cobros', exact: true }).click()
     await expect(page.getByRole('dialog')).toContainText('Cambios sin guardar')
     await page.getByRole('button', { name: 'Descartar cambios' }).click()
     await expect(page).toHaveURL('/dashboard/payments')
@@ -88,7 +88,7 @@ test.describe('dashboard mobile navigation', () => {
   })
 })
 
-test('staff mobile navigation omits Settings and Billing', async ({ page }) => {
+test('staff mobile navigation omits management-only settings and billing', async ({ page }) => {
   const fixture = await createDashboardFixture(prisma, { role: 'staff' })
 
   page.setExtraHTTPHeaders({
@@ -102,8 +102,8 @@ test('staff mobile navigation omits Settings and Billing', async ({ page }) => {
     await page.getByRole('button', { name: 'Más opciones' }).click()
 
     const moreNavigation = page.getByRole('navigation', { name: 'Más secciones del dashboard' })
-    await expect(moreNavigation.getByRole('link', { name: 'Configuración', exact: true })).toHaveCount(0)
-    await expect(moreNavigation.getByRole('link', { name: 'Facturación', exact: true })).toHaveCount(0)
+    await expect(moreNavigation.getByRole('link', { name: 'Perfil público', exact: true })).toHaveCount(0)
+    await expect(moreNavigation.getByRole('link', { name: 'Plan y facturación', exact: true })).toHaveCount(0)
     await expectNoHorizontalOverflow(page)
   } finally {
     await cleanupDashboardFixture(prisma, fixture)
