@@ -104,7 +104,7 @@ for (const viewport of VIEWPORTS) {
 
     await page.goto('/dashboard/fidelizacion')
     await expectHeight(page.getByLabel('Nombre de la unidad'), viewport.formHeight)
-    await expectHeight(page.locator('#pointsPerVisit'), viewport.formHeight)
+    await expectHeight(page.getByRole('spinbutton', { name: /Puntos por visita/ }).filter({ visible: true }).first(), viewport.formHeight)
     await expectHeight(page.locator('#redemption-name'), viewport.formHeight)
     await expectNoHorizontalOverflow(page)
 
