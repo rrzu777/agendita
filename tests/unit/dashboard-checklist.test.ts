@@ -40,6 +40,25 @@ describe('dashboard setup checklist', () => {
     }
   })
 
+  it('wraps the action group when tablet width cannot fit every control in one row', () => {
+    const checklist = buildSetupChecklist({
+      business,
+      servicesCount: 0,
+      availabilityCount: 0,
+      bookingsCount: 0,
+      hasConnectedPaymentAccount: false,
+      publicUrl: getBusinessPublicUrl(business),
+      bookingUrl: getBusinessPublicUrl(business, '/book'),
+    })
+    const document = new DOMParser().parseFromString(
+      renderToStaticMarkup(createElement(SetupChecklist, { checklist, initialSetupIncomplete: true })),
+      'text/html',
+    )
+
+    const actionGroup = document.querySelector('section > div > div.flex.flex-col.gap-2')
+    expect(actionGroup?.classList.contains('flex-wrap')).toBe(true)
+  })
+
   it('shows pending items for missing services, schedule, booking, payments and cancellation policy', () => {
     const checklist = buildSetupChecklist({
       business,

@@ -71,7 +71,7 @@ export function SetupChecklist({
             {checklist.isReady ? 'Negocio listo para operar' : `${checklist.completedCount}/${checklist.totalCount} listo`}
           </h2>
         </div>
-        <div className="flex flex-col gap-2 sm:flex-row">
+        <div className="flex flex-col flex-wrap gap-2 sm:flex-row">
           {initialSetupIncomplete && (
             <Button variant="outline" className="min-h-11 min-w-11" asChild>
               <Link href="/dashboard/onboarding">Continuar configuración inicial</Link>
