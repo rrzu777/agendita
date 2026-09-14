@@ -199,7 +199,14 @@ export function BookingDrawer({ booking, open, onOpenChange, onCloseAutoFocus, b
           <div className="space-y-3 border-t border-border pt-4">
             <h4 className="text-sm font-semibold">Contactar cliente</h4>
             <BookingContactButtons
+              availability={{
+                status: booking.status,
+                paymentStatus: booking.paymentStatus,
+                holdExpiresAt: booking.holdExpiresAt,
+                now,
+              }}
               booking={{
+                id: booking.id,
                 bookingNumber: booking.bookingNumber,
                 customerName: booking.customer?.name || '',
                 customerPhone: booking.customer?.phone || null,
@@ -217,9 +224,6 @@ export function BookingDrawer({ booking, open, onOpenChange, onCloseAutoFocus, b
                 businessAddress,
               }}
             />
-            {!booking.customer?.phone && (
-              <p className="text-xs text-muted-foreground">Sin teléfono registrado</p>
-            )}
           </div>
 
           {isManualPaymentAllowed(booking, now) ? (

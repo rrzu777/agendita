@@ -122,7 +122,7 @@ describe('CalendarViews — bloqueo interactivo (día)', () => {
       <CalendarViews {...baseProps} view="day" date="2026-06-30" bookings={[]} timeBlocks={[timeBlock]} />,
     )
     expect(html).toContain('<button')
-    expect(html).toContain('aria-label="Bloqueo: Almuerzo"')
+    expect(html).toContain('aria-label="Bloqueo: Almuerzo — 13:00–14:00"')
   })
 
   /**
@@ -140,7 +140,7 @@ describe('CalendarViews — bloqueo interactivo (día)', () => {
         timeBlocks={[{ ...timeBlock, professionalName: 'Ana' }]}
       />,
     )
-    expect(deAna).toContain('aria-label="Bloqueo de Ana: Almuerzo"')
+    expect(deAna).toContain('aria-label="Bloqueo de Ana: Almuerzo — 13:00–14:00"')
     expect(deAna).toContain('Ana · Almuerzo')
 
     const delNegocio = renderToStaticMarkup(

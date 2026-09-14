@@ -7,6 +7,8 @@ import { TimeInput } from '@/components/ui/time-input'
 interface BlockFormFieldsProps {
   date: string
   onDateChange: (value: string) => void
+  endDate?: string
+  onEndDateChange?: (value: string) => void
   startTime: string
   onStartTimeChange: (value: string) => void
   endTime: string
@@ -21,6 +23,8 @@ interface BlockFormFieldsProps {
 export function BlockFormFields({
   date,
   onDateChange,
+  endDate,
+  onEndDateChange,
   startTime,
   onStartTimeChange,
   endTime,
@@ -41,6 +45,18 @@ export function BlockFormFields({
           onChange={(e) => onDateChange(e.target.value)}
         />
       </div>
+
+      {onEndDateChange && (
+        <div>
+          <Label htmlFor="block-end-date">Fecha fin</Label>
+          <Input
+            id="block-end-date"
+            type="date"
+            value={endDate ?? date}
+            onChange={(e) => onEndDateChange(e.target.value)}
+          />
+        </div>
+      )}
 
       <div className="grid gap-3 sm:grid-cols-2">
         <div>

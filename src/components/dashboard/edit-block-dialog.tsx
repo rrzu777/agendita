@@ -12,8 +12,12 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { updateTimeBlock, deleteTimeBlock } from '@/server/actions/time-blocks'
-import { deriveBlockFormValues } from '@/lib/calendar/block-form-values'
-import { localDateTimeToUtc } from '@/lib/availability/timezone'
+import {
+  deriveBlockFormValues,
+  localDateDaySpan,
+  resolveBlockFormInterval,
+  shiftLocalDate,
+} from '@/lib/calendar/block-form-values'
 import { BlockFormFields } from './block-form-fields'
 import type { CalendarTimeBlock } from './time-block-card'
 
@@ -22,11 +26,15 @@ interface EditBlockDialogProps {
   timezone: string
   open: boolean
   onOpenChange: (open: boolean) => void
+  onCloseAutoFocus?: (event: Event) => void
 }
 
-export function EditBlockDialog({ block, timezone, open, onOpenChange }: EditBlockDialogProps) {
+export function EditBlockDialog({ block, timezone, open, onOpenChange, onCloseAutoFocus }: EditBlockDialogProps) {
   const initial = deriveBlockFormValues(block, timezone)
+  const initialDaySpan = localDateDaySpan(initial.date, initial.endDate)
   const [date, setDate] = useState(initial.date)
+  const [endDate, setEndDate] = useState(initial.endDate)
+  const [endDateTouched, setEndDateTouched] = useState(false)
   const [startTime, setStartTime] = useState(initial.startTime)
   const [endTime, setEndTime] = useState(initial.endTime)
   const [reason, setReason] = useState(initial.reason)
@@ -36,6 +44,18 @@ export function EditBlockDialog({ block, timezone, open, onOpenChange }: EditBlo
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
+
+  function handleDateChange(nextDate: string) {
+    setDate(nextDate)
+    // Cambiar solo el inicio mueve el bloqueo completo. La dueña puede
+    // desactivar esta sincronización editando explícitamente "Fecha fin".
+    if (!endDateTouched) setEndDate(nextDate ? shiftLocalDate(nextDate, initialDaySpan) : '')
+  }
+
+  function handleEndDateChange(nextEndDate: string) {
+    setEndDateTouched(true)
+    setEndDate(nextEndDate)
+  }
 
   function handleOpenChange(newOpen: boolean) {
     if (!newOpen) {
@@ -50,8 +70,8 @@ export function EditBlockDialog({ block, timezone, open, onOpenChange }: EditBlo
     e.preventDefault()
     setError(null)
 
-    if (!date) {
-      setError('Selecciona una fecha')
+    if (!date || !endDate) {
+      setError('Selecciona fecha de inicio y fin')
       return
     }
     if (!startTime || !endTime) {
@@ -61,8 +81,11 @@ export function EditBlockDialog({ block, timezone, open, onOpenChange }: EditBlo
 
     startTransition(async () => {
       try {
-        const start = localDateTimeToUtc(date, startTime, timezone)
-        const end = localDateTimeToUtc(date, endTime, timezone)
+        const { start, end } = resolveBlockFormInterval(
+          block,
+          { date, endDate, startTime, endTime },
+          timezone,
+        )
 
         const result = await updateTimeBlock(block.id, {
           startDateTime: start,
@@ -97,7 +120,7 @@ export function EditBlockDialog({ block, timezone, open, onOpenChange }: EditBlo
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent>
+      <DialogContent onCloseAutoFocus={onCloseAutoFocus}>
         {confirmingDelete ? (
           <>
             <DialogHeader>
@@ -134,7 +157,9 @@ export function EditBlockDialog({ block, timezone, open, onOpenChange }: EditBlo
             <form onSubmit={handleSubmit} className="space-y-4">
               <BlockFormFields
                 date={date}
-                onDateChange={setDate}
+                onDateChange={handleDateChange}
+                endDate={endDate}
+                onEndDateChange={handleEndDateChange}
                 startTime={startTime}
                 onStartTimeChange={setStartTime}
                 endTime={endTime}

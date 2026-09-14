@@ -142,6 +142,7 @@ export default async function CalendarPage({
             startDateTime: tb.startDateTime.toISOString(),
             endDateTime: tb.endDateTime.toISOString(),
             reason: tb.reason ?? null,
+            overlapToleranceMinutes: tb.overlapToleranceMinutes,
             seriesId: tb.seriesId,
             occurrenceDate: tb.occurrenceDate ? tb.occurrenceDate.toISOString() : undefined,
             professionalName: tb.professionalId ? nombrePorId.get(tb.professionalId) ?? null : null,

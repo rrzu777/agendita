@@ -11,6 +11,7 @@ export type CalendarTimeBlock = {
   startDateTime: string
   endDateTime: string
   reason?: string | null
+  overlapToleranceMinutes?: number
   seriesId?: string
   occurrenceDate?: string
   /**

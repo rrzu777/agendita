@@ -8,6 +8,8 @@ describe('BlockFormFields', () => {
       <BlockFormFields
         date="2026-06-01"
         onDateChange={() => {}}
+        endDate="2026-06-02"
+        onEndDateChange={() => {}}
         startTime="13:00"
         onStartTimeChange={() => {}}
         endTime="14:00"
@@ -17,6 +19,9 @@ describe('BlockFormFields', () => {
       />,
     )
     expect(html).toContain('value="2026-06-01"')
+    expect(html).toContain('id="block-end-date"')
+    expect(html).toContain('Fecha fin')
+    expect(html).toContain('value="2026-06-02"')
     expect(html).toContain('aria-label="Hora inicio"')
     expect(html).toContain('13:00')
     expect(html).toContain('aria-label="Hora fin"')

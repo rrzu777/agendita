@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useForm, useWatch } from 'react-hook-form'
+import { Controller, useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { FormField } from '@/components/ui/form-field'
 import { Input } from '@/components/ui/input'
@@ -11,6 +11,7 @@ import { SettingsSaveBar } from '@/components/dashboard/settings/settings-save-b
 import { useSettingsDraft } from '@/components/dashboard/settings/use-settings-draft'
 import { useUnsavedChangesRegistration } from '@/components/dashboard/unsaved-changes-provider'
 import { PublicProfilePreview } from '@/components/dashboard/settings/public-profile-preview'
+import { ColorPicker } from '@/components/ui/color-picker'
 import { profileSettingsSchema, type ProfileSettingsInput } from '@/lib/business/schema'
 import { getBusinessPublicUrl } from '@/lib/business/urls'
 import { updateProfileSettings } from '@/server/actions/business-settings'
@@ -26,6 +27,7 @@ type ProfileSettingsFormProps = {
 const DRAFT_VERSION = 1
 
 export function ProfileSettingsForm({ businessId, slug, category, initialValues }: ProfileSettingsFormProps) {
+  const [hydrated, setHydrated] = useState(false)
   const [baseline, setBaseline] = useState(initialValues)
   const [draftValues, setDraftValues] = useState(initialValues)
   const [status, setStatus] = useState<'idle' | 'saved' | 'error'>('idle')
@@ -47,6 +49,13 @@ export function ProfileSettingsForm({ businessId, slug, category, initialValues 
     control,
     name: ['name', 'city', 'bio', 'logoUrl', 'subdomain', 'brandColor', 'visualStyle'],
   })
+
+  useEffect(() => {
+    // Antes de que React tome los inputs SSR, una edición se perdería al hidratar.
+    // El formulario se habilita sólo cuando su estado controlado ya es autoritativo.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- readiness is client-only hydration state.
+    setHydrated(true)
+  }, [])
 
   useEffect(() => subscribe({
     formState: { values: true },
@@ -134,7 +143,7 @@ export function ProfileSettingsForm({ businessId, slug, category, initialValues 
           </p>
         )}
 
-        <fieldset disabled={isSubmitting} aria-label="Campos del perfil" aria-busy={isSubmitting} className="space-y-10 disabled:opacity-70">
+        <fieldset disabled={!hydrated || isSubmitting} aria-label="Campos del perfil" aria-busy={isSubmitting || !hydrated} className="space-y-10 disabled:opacity-70">
           <SettingsFormSection title="Identidad" description="La información principal que verá tu público.">
             <FormField id="profile-name" label="Nombre del negocio" required error={errors.name?.message}>
               {(a11y) => <Input id="profile-name" density="form" {...register('name')} {...a11y} />}
@@ -159,21 +168,24 @@ export function ProfileSettingsForm({ businessId, slug, category, initialValues 
               help="Opcional. Usa un hexadecimal de seis dígitos; por ejemplo, #35524A."
             >
               {(a11y) => (
-                <div className="flex items-center gap-3">
-                  <Input
-                    id="profile-brand-color"
-                    density="form"
-                    autoCapitalize="characters"
-                    placeholder="#4F5D54"
-                    {...register('brandColor')}
-                    {...a11y}
-                  />
-                  <span
-                    aria-hidden="true"
-                    className="size-11 shrink-0 rounded-lg border border-border shadow-sm"
-                    style={{ backgroundColor: /^#[0-9a-fA-F]{6}$/.test(brandColor || '') ? brandColor : '#4F5D54' }}
-                  />
-                </div>
+                <Controller
+                  control={control}
+                  name="brandColor"
+                  render={({ field }) => (
+                    <ColorPicker
+                      id="profile-brand-color"
+                      label="Color de marca"
+                      value={field.value || ''}
+                      onChange={field.onChange}
+                      onBlur={field.onBlur}
+                      inputRef={field.ref}
+                      hideLabel
+                      describedBy={a11y['aria-describedby']}
+                      error={a11y['aria-invalid']}
+                      onClear={() => field.onChange('')}
+                    />
+                  )}
+                />
               )}
             </FormField>
             <FormField
@@ -230,7 +242,7 @@ export function ProfileSettingsForm({ businessId, slug, category, initialValues 
           </SettingsFormSection>
         </fieldset>
 
-        <SettingsSaveBar isDirty={isDirty} isSubmitting={isSubmitting} status={status} error={serverError} />
+        <SettingsSaveBar isDirty={isDirty} isSubmitting={isSubmitting} status={status} error={serverError} disabled={!hydrated} />
       </form>
 
       <PublicProfilePreview

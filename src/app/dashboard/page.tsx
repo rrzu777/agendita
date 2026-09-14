@@ -37,10 +37,6 @@ export default async function DashboardPage() {
     redirect('/recover-business')
   }
 
-  if (!userData.business.onboardingCompletedAt) {
-    redirect('/dashboard/onboarding')
-  }
-
   const business = userData.business
   const v = getVocabulary(business.category)
   const now = new Date()
@@ -164,7 +160,10 @@ export default async function DashboardPage() {
           )}
         </DashboardPanel>
 
-        <SetupChecklist checklist={checklist} />
+        <SetupChecklist
+          checklist={checklist}
+          initialSetupIncomplete={!business.onboardingCompletedAt}
+        />
 
         <DashboardPanel title="Tu perfil público" description={`Comparte este enlace con tus ${v.clients} para que reserven.`}>
           <div className="flex flex-col gap-4 min-[721px]:flex-row min-[721px]:items-center min-[721px]:justify-between">

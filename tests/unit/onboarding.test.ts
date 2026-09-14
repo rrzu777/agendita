@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mockPrisma = {
   service: { count: vi.fn() },
   availabilityRule: { count: vi.fn() },
-  business: { update: vi.fn() },
+  business: { findUnique: vi.fn(), updateMany: vi.fn() },
 }
 
 vi.mock('@/lib/db', () => ({ prisma: mockPrisma }))
@@ -17,7 +17,8 @@ describe('completeOnboarding', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockPrisma.availabilityRule.count.mockResolvedValue(1)
-    mockPrisma.business.update.mockResolvedValue({ id: 'biz-1' })
+    mockPrisma.business.findUnique.mockResolvedValue({ onboardingCompletedAt: null })
+    mockPrisma.business.updateMany.mockResolvedValue({ count: 1 })
   })
 
   it('does not complete onboarding when servicesCount is 0', async () => {
@@ -29,7 +30,7 @@ describe('completeOnboarding', () => {
       ok: false,
       error: expect.stringMatching(/al menos un servicio/),
     })
-    expect(mockPrisma.business.update).not.toHaveBeenCalled()
+    expect(mockPrisma.business.updateMany).not.toHaveBeenCalled()
   })
 
   /**
@@ -54,28 +55,70 @@ describe('completeOnboarding', () => {
     const result = await completeOnboarding('biz-1')
 
     expect(result).toMatchObject({ ok: true })
-    expect(mockPrisma.business.update).toHaveBeenCalledWith({
-      where: { id: 'biz-1' },
+    expect(mockPrisma.business.updateMany).toHaveBeenCalledWith({
+      where: { id: 'biz-1', onboardingCompletedAt: null },
       data: {
         onboardingCompletedAt: expect.any(Date),
         onboardingStep: null,
       },
     })
   })
+
+  it('does not complete onboarding when the business has no active business-level availability', async () => {
+    mockPrisma.service.count.mockResolvedValue(1)
+    mockPrisma.availabilityRule.count.mockResolvedValue(0)
+
+    const result = await completeOnboarding('biz-1')
+
+    expect(result).toEqual({
+      ok: false,
+      error: expect.stringMatching(/al menos un día de atención/),
+    })
+    expect(mockPrisma.business.updateMany).not.toHaveBeenCalled()
+  })
+
+  it('applies only one completion transition while replayed delivery stays idempotent', async () => {
+    mockPrisma.service.count.mockResolvedValue(1)
+    mockPrisma.business.findUnique
+      .mockResolvedValueOnce({ onboardingCompletedAt: null })
+      .mockResolvedValueOnce({ onboardingCompletedAt: null })
+      .mockResolvedValueOnce({ onboardingCompletedAt: new Date() })
+    mockPrisma.business.updateMany
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValueOnce({ count: 0 })
+
+    const first = await completeOnboarding('biz-1')
+    const duplicate = await completeOnboarding('biz-1')
+
+    expect(first).toMatchObject({ ok: true })
+    expect(duplicate).toMatchObject({ ok: true })
+    expect(mockPrisma.business.updateMany).toHaveBeenCalledTimes(2)
+  })
+
+  it('treats a retry after a committed completion as success without mutating twice', async () => {
+    mockPrisma.business.findUnique.mockResolvedValue({ onboardingCompletedAt: new Date() })
+
+    const retry = await completeOnboarding('biz-1')
+
+    expect(retry).toMatchObject({ ok: true })
+    expect(mockPrisma.service.count).not.toHaveBeenCalled()
+    expect(mockPrisma.availabilityRule.count).not.toHaveBeenCalled()
+    expect(mockPrisma.business.updateMany).not.toHaveBeenCalled()
+  })
 })
 
 describe('saveOnboardingStep', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockPrisma.business.update.mockResolvedValue({ id: 'biz-1' })
+    mockPrisma.business.updateMany.mockResolvedValue({ count: 1 })
   })
 
   it('saves the step for the session business', async () => {
     const result = await saveOnboardingStep('biz-1', 2)
 
     expect(result).toMatchObject({ ok: true })
-    expect(mockPrisma.business.update).toHaveBeenCalledWith({
-      where: { id: 'biz-1' },
+    expect(mockPrisma.business.updateMany).toHaveBeenCalledWith({
+      where: { id: 'biz-1', onboardingCompletedAt: null },
       data: { onboardingStep: 2 },
     })
   })
@@ -84,6 +127,25 @@ describe('saveOnboardingStep', () => {
     const result = await saveOnboardingStep('biz-other', 2)
 
     expect(result).toEqual({ ok: false, error: 'No autorizado' })
-    expect(mockPrisma.business.update).not.toHaveBeenCalled()
+    expect(mockPrisma.business.updateMany).not.toHaveBeenCalled()
+  })
+
+  it.each([-1, 5, 1.5, Number.NaN])('rejects invalid persisted step %s', async (step) => {
+    const result = await saveOnboardingStep('biz-1', step)
+
+    expect(result).toEqual({ ok: false, error: expect.stringMatching(/paso de configuración/i) })
+    expect(mockPrisma.business.updateMany).not.toHaveBeenCalled()
+  })
+
+  it('does not restore a step when a late tab save arrives after completion', async () => {
+    mockPrisma.business.updateMany.mockResolvedValue({ count: 0 })
+
+    const result = await saveOnboardingStep('biz-1', 4)
+
+    expect(result).toMatchObject({ ok: true })
+    expect(mockPrisma.business.updateMany).toHaveBeenCalledWith({
+      where: { id: 'biz-1', onboardingCompletedAt: null },
+      data: { onboardingStep: 4 },
+    })
   })
 })

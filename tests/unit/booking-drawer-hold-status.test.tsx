@@ -4,9 +4,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { BookingDrawer } from '@/components/dashboard/booking-drawer'
 import type { CalendarBooking } from '@/components/dashboard/booking-card'
 
-vi.mock('@/components/dashboard/booking-contact-buttons', () => ({
-  BookingContactButtons: () => null,
-}))
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }))
 vi.mock('@/components/dashboard/customer-photos', () => ({
   CustomerPhotos: () => null,
@@ -118,5 +115,43 @@ describe('BookingDrawer — holds vencidos', () => {
     expect(document.body.textContent).toContain('usá Revivir')
     expect(document.body.textContent).not.toContain('Mercado Pago está procesando este pago.')
     expect(document.body.textContent).not.toContain('Reprogramar')
+  })
+
+  it.each(['pending_payment', 'pending_confirmation', 'expired', 'cancelled', 'completed', 'no_show'])('mantiene contacto neutral en %s sin confirmación ni recordatorio falsos', (status) => {
+    const rendered = renderDrawer({ ...booking, status, holdExpiresAt: null })
+    root = rendered.root
+    const contact = document.querySelector('[data-slot="booking-contact-actions"]')!
+
+    expect(contact.textContent).toContain('Contactar por WhatsApp')
+    expect(contact.textContent).toContain('Copiar resumen')
+    expect(contact.textContent).not.toContain('Enviar confirmación')
+    expect(contact.textContent).not.toContain('Enviar recordatorio')
+    expect(contact.textContent).not.toContain('Copiar recordatorio')
+  })
+
+  it('ofrece confirmación y recordatorio sólo cuando la reserva está confirmada y próxima', () => {
+    const rendered = renderDrawer({ ...booking, status: 'confirmed', holdExpiresAt: null })
+    root = rendered.root
+    const contact = document.querySelector('[data-slot="booking-contact-actions"]')!
+
+    expect(contact.textContent).toContain('Enviar confirmación')
+    expect(contact.textContent).toContain('Enviar recordatorio')
+    expect(contact.textContent).toContain('Copiar recordatorio')
+  })
+
+  it('retira el recordatorio cuando una reserva confirmada ya comenzó', () => {
+    const rendered = renderDrawer({ ...booking, status: 'confirmed', startDateTime: '2026-06-30T17:00:00.000Z', holdExpiresAt: null })
+    root = rendered.root
+    const contact = document.querySelector('[data-slot="booking-contact-actions"]')!
+
+    expect(contact.textContent).toContain('Enviar confirmación')
+    expect(contact.textContent).not.toContain('Enviar recordatorio')
+    expect(contact.textContent).not.toContain('Copiar recordatorio')
+  })
+
+  it('muestra una sola vez el aviso cuando la reserva no tiene teléfono', () => {
+    const rendered = renderDrawer({ ...booking, customer: { ...booking.customer!, phone: null as never } })
+    root = rendered.root
+    expect(document.body.textContent?.match(/Sin teléfono registrado/g)).toHaveLength(1)
   })
 })

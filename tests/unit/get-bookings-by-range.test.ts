@@ -37,7 +37,8 @@ describe('getBookingsByRange', () => {
     expect(mockFindMany).toHaveBeenCalledWith({
       where: {
         businessId: 'biz-1',
-        startDateTime: { gte: start, lte: end },
+        startDateTime: { lte: end },
+        endDateTime: { gt: start },
       },
       orderBy: { startDateTime: 'asc' },
       include: {

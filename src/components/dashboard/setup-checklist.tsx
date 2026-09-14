@@ -9,8 +9,15 @@ import { CheckCircle2, Circle, Copy, ExternalLink, MessageCircle } from 'lucide-
 const ITEM_CLASS =
   'flex items-center justify-between gap-3 rounded-xl border border-border/70 bg-card px-4 py-3 text-sm transition hover:border-primary/40'
 
-export function SetupChecklist({ checklist }: { checklist: SetupChecklistData }) {
+export function SetupChecklist({
+  checklist,
+  initialSetupIncomplete = false,
+}: {
+  checklist: SetupChecklistData
+  initialSetupIncomplete?: boolean
+}) {
   const [copied, setCopied] = useState<string | null>(null)
+  const [copyError, setCopyError] = useState('')
   const content = (
     <div className="space-y-3">
       {checklist.items.map((item) => {
@@ -42,9 +49,15 @@ export function SetupChecklist({ checklist }: { checklist: SetupChecklistData })
   )
 
   async function copyLink(label: string, url: string) {
-    await navigator.clipboard.writeText(url)
-    setCopied(label)
-    setTimeout(() => setCopied(null), 2500)
+    setCopyError('')
+    try {
+      await navigator.clipboard.writeText(url)
+      setCopied(label)
+      setTimeout(() => setCopied(null), 2500)
+    } catch {
+      setCopied(null)
+      setCopyError('No pudimos copiar el enlace. Intenta de nuevo.')
+    }
   }
 
   const whatsappText = encodeURIComponent(`Reserva aquí: ${checklist.bookingUrl}`)
@@ -58,21 +71,32 @@ export function SetupChecklist({ checklist }: { checklist: SetupChecklistData })
             {checklist.isReady ? 'Negocio listo para operar' : `${checklist.completedCount}/${checklist.totalCount} listo`}
           </h2>
         </div>
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <Button type="button" variant="outline" onClick={() => copyLink('perfil', checklist.publicUrl)}>
+        <div className="flex flex-col flex-wrap gap-2 sm:flex-row">
+          {initialSetupIncomplete && (
+            <Button variant="outline" className="min-h-11 min-w-11" asChild>
+              <Link href="/dashboard/onboarding">Continuar configuración inicial</Link>
+            </Button>
+          )}
+          <Button type="button" variant="outline" className="min-h-11 min-w-11" onClick={() => copyLink('perfil', checklist.publicUrl)}>
             <Copy className="mr-2 size-4" />
             {copied === 'perfil' ? 'Perfil copiado' : 'Copiar perfil'}
           </Button>
-          <Button type="button" variant="outline" onClick={() => copyLink('reserva', checklist.bookingUrl)}>
+          <Button type="button" variant="outline" className="min-h-11 min-w-11" onClick={() => copyLink('reserva', checklist.bookingUrl)}>
             <Copy className="mr-2 size-4" />
             {copied === 'reserva' ? 'Reserva copiada' : 'Copiar reserva'}
           </Button>
-          <Button type="button" className="w-full sm:w-auto" asChild><a href={`https://wa.me/?text=${whatsappText}`} target="_blank" rel="noopener noreferrer">
+          <Button type="button" className="min-h-11 min-w-11 w-full sm:w-auto" asChild><a href={`https://wa.me/?text=${whatsappText}`} target="_blank" rel="noopener noreferrer">
               <MessageCircle className="mr-2 size-4" />
               WhatsApp
             </a></Button>
         </div>
       </div>
+
+      {copyError && (
+        <p role="alert" className="mb-4 rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
+          {copyError}
+        </p>
+      )}
 
       {checklist.isReady ? (
         <details className="rounded-xl border border-success/20 bg-success/5 p-4 text-sm text-success">

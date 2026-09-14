@@ -1,4 +1,7 @@
+import { createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
+import { SetupChecklist } from '@/components/dashboard/setup-checklist'
 import { getBusinessPublicUrl } from '@/lib/business/urls'
 import { buildSetupChecklist } from '@/lib/dashboard/setup-checklist'
 
@@ -13,6 +16,49 @@ const business = {
 }
 
 describe('dashboard setup checklist', () => {
+  it('keeps both copy controls and WhatsApp at least 44px', () => {
+    const checklist = buildSetupChecklist({
+      business,
+      servicesCount: 1,
+      availabilityCount: 1,
+      bookingsCount: 1,
+      hasConnectedPaymentAccount: true,
+      publicUrl: getBusinessPublicUrl(business),
+      bookingUrl: getBusinessPublicUrl(business, '/book'),
+    })
+    const document = new DOMParser().parseFromString(
+      renderToStaticMarkup(createElement(SetupChecklist, { checklist })),
+      'text/html',
+    )
+
+    for (const name of ['Copiar perfil', 'Copiar reserva', 'WhatsApp']) {
+      const control = Array.from(document.querySelectorAll<HTMLElement>('button, a'))
+        .find((candidate) => candidate.textContent?.trim() === name)
+      expect(control, name).toBeDefined()
+      expect(control?.classList.contains('min-h-11'), name).toBe(true)
+      expect(control?.classList.contains('min-w-11'), name).toBe(true)
+    }
+  })
+
+  it('wraps the action group when tablet width cannot fit every control in one row', () => {
+    const checklist = buildSetupChecklist({
+      business,
+      servicesCount: 0,
+      availabilityCount: 0,
+      bookingsCount: 0,
+      hasConnectedPaymentAccount: false,
+      publicUrl: getBusinessPublicUrl(business),
+      bookingUrl: getBusinessPublicUrl(business, '/book'),
+    })
+    const document = new DOMParser().parseFromString(
+      renderToStaticMarkup(createElement(SetupChecklist, { checklist, initialSetupIncomplete: true })),
+      'text/html',
+    )
+
+    const actionGroup = document.querySelector('section > div > div.flex.flex-col.gap-2')
+    expect(actionGroup?.classList.contains('flex-wrap')).toBe(true)
+  })
+
   it('shows pending items for missing services, schedule, booking, payments and cancellation policy', () => {
     const checklist = buildSetupChecklist({
       business,

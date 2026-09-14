@@ -164,6 +164,7 @@ model Business {
   analyticsDailyMetrics              AnalyticsDailyMetric[]
   analyticsInsightPreference         AnalyticsInsightPreference?
   weeklyInsights                     AnalyticsWeeklyInsight[]
+  colorFavorites                     BusinessColorFavorite[]
 }
 
 enum PaymentAccountStatus {
@@ -510,6 +511,20 @@ model Service {
   professionals   Professional[]   @relation("ProfessionalServices")
 
   @@index([businessId, isActive])
+}
+
+/// Colores guardados explícitamente por negocio para reutilizar en servicios y perfil.
+/// No sustituye el color de marca ni los colores propios de cada servicio.
+model BusinessColorFavorite {
+  id         String   @id @default(cuid())
+  businessId String
+  color      String
+  createdAt  DateTime @default(now())
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, color])
+  @@index([businessId, createdAt])
 }
 
 /// Quién atiende. Sin cuenta propia: no hay login por profesional, y el enum

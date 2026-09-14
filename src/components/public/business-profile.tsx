@@ -16,6 +16,7 @@ interface BusinessProfileProps {
 }
 
 const daysOfWeek = ['Domingos', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábados']
+const HEX_COLOR_REGEX = /^#[0-9A-Fa-f]{6}$/
 
 export function BusinessProfile({ business, bookingHref = `/book/${business.slug}`, packagesHref, accountCta }: BusinessProfileProps) {
   const v = getVocabulary(business.category)
@@ -76,9 +77,9 @@ export function BusinessProfile({ business, bookingHref = `/book/${business.slug
               {hasServices ? (
                 <div className="divide-y divide-border rounded-[var(--radius)] border border-border bg-card px-4 sm:px-6">
                   {business.services.map((service) => (
-                    <article key={service.id} className="grid gap-2 py-5 sm:grid-cols-[minmax(0,1fr)_auto] sm:gap-6">
-                      <div className="min-w-0"><h3 className="break-words font-heading text-lg font-semibold text-primary">{service.name}</h3>{service.description && <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{service.description}</p>}</div>
-                      <div className="flex flex-wrap items-center gap-x-2 text-sm text-muted-foreground sm:justify-end"><span className="inline-flex items-center gap-1"><Clock className="size-4" />{formatDuration(service.durationMinutes)}</span><span className="font-semibold text-primary">{formatMoney(service.price, business.currency)}</span>{service.depositAmount > 0 && <span className="basis-full sm:text-right">Abono {formatMoney(service.depositAmount, business.currency)}</span>}<Link href={serviceHref(service.id)} className="mt-2 inline-flex min-h-11 basis-full items-center justify-center rounded-lg border border-border px-3 font-semibold text-primary hover:bg-muted">Reservar este servicio</Link></div>
+                    <article key={service.id} className="grid gap-4 py-5 lg:grid-cols-[minmax(0,1fr)_13rem] lg:gap-6">
+                      <div className="min-w-0"><div className="flex items-start gap-3"><span aria-hidden="true" className="mt-1.5 size-3 shrink-0 rounded-full border border-border" style={{ backgroundColor: HEX_COLOR_REGEX.test(service.pastelColor) ? service.pastelColor : '#E2E7E2' }} /><div className="min-w-0"><h3 className="break-words font-heading text-lg font-semibold text-primary">{service.name}</h3>{service.description && <p className="mt-1 break-words text-sm leading-relaxed text-muted-foreground">{service.description}</p>}</div></div></div>
+                      <div className="flex min-w-0 flex-col items-start gap-2 text-sm text-muted-foreground lg:items-end"><div className="flex flex-wrap items-center gap-x-2 gap-y-1 lg:justify-end"><span className="inline-flex items-center gap-1"><Clock className="size-4" />{formatDuration(service.durationMinutes)}</span><span className="font-semibold text-primary">{formatMoney(service.price, business.currency)}</span></div>{service.depositAmount > 0 && <span className="break-words lg:text-right">Abono {formatMoney(service.depositAmount, business.currency)}</span>}<Link href={serviceHref(service.id)} className="inline-flex min-h-11 w-full items-center justify-center rounded-lg border border-border px-3 text-center font-semibold text-primary hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">Reservar este servicio</Link></div>
                     </article>
                   ))}
                 </div>

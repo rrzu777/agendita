@@ -13,28 +13,28 @@ const props = { selectedProfessionalId: null, now: new Date('2026-06-30T10:00:00
 const at = (time: string) => `2026-06-30T${time}:00Z`
 const booking = (id: string, start: string, end: string): TimelineBooking => ({ id, bookingNumber: null, startDateTime: at(start), endDateTime: at(end), status: 'confirmed', customer: { name: id, phone: '56912345678', email: null }, service: { name: 'Corte' }, professional: null, paymentStatus: 'unpaid', holdExpiresAt: null, approvalExpiresAt: null, payments: [], totalPrice: 10000, depositPaid: 0, depositRequired: 0, finalAmount: 10000, remainingBalance: 10000, modality: 'on_site' })
 
-it('packs short, simultaneous and crossing bookings/blocks into disjoint targets of at least 44 by 44', () => {
-  const bookings = [booking('Ana', '09:00', '09:05'), booking('Beto', '09:00', '10:00'), booking('Carla', '09:10', '09:15'), booking('Dani', '23:55', '23:59')]
-  const timeBlocks = [{ id: 'block1', startDateTime: at('09:00'), endDateTime: at('09:05'), reason: 'Limpieza' }, { id: 'block2', startDateTime: at('09:05'), endDateTime: at('09:20'), reason: 'Descanso' }]
+it('pinta intervalos reales y ofrece acciones equivalentes de 44 px para citas y bloqueos breves', () => {
+  const bookings = [booking('Ana', '11:30', '11:50'), booking('Beto', '12:00', '13:30'), booking('Carla', '23:55', '23:59')]
+  const timeBlocks = [{ id: 'block1', startDateTime: at('11:50'), endDateTime: at('11:55'), reason: 'Limpieza', professionalName: 'Paula' }]
   const document = new DOMParser().parseFromString(renderToStaticMarkup(<CalendarViews {...props} view="day" bookings={bookings} timeBlocks={timeBlocks} />), 'text/html')
-  const targets = [...document.querySelectorAll<HTMLButtonElement>('button[style*="top:"]')]
-  expect(targets).toHaveLength(6)
-  const rects = targets.map(target => {
-    const columnWidth = parseFloat(target.parentElement!.parentElement!.style.minWidth) || 128
-    const percentage = (style: string) => Number(style.match(/([\d.]+)%/)?.[1] || 0)
-    const width = percentage(target.style.width) * columnWidth / 100 - 4
-    const height = parseFloat(target.style.height)
-    expect(height).toBeGreaterThanOrEqual(44)
-    expect(width).toBeGreaterThanOrEqual(44)
-    const x = percentage(target.style.left) * columnWidth / 100 + 2
-    const y = parseFloat(target.style.top)
-    expect(y + height).toBeLessThanOrEqual(parseFloat(target.parentElement!.style.height))
-    return { x, y, right: x + width, bottom: y + height }
-  })
-  for (let i = 0; i < rects.length; i++) for (let j = i + 1; j < rects.length; j++) {
-    const a = rects[i], b = rects[j]
-    expect(a.right <= b.x || b.right <= a.x || a.bottom <= b.y || b.bottom <= a.y).toBe(true)
-  }
+  const anaBand = document.querySelector<HTMLElement>('[data-booking-id="Ana"]')!
+  const betoButton = document.querySelector<HTMLButtonElement>('[data-booking-id="Beto"]')!
+  const blockBand = document.querySelector<HTMLElement>('[data-time-block-id="block1"]')!
+  expect(anaBand.tagName).toBe('DIV')
+  expect(parseFloat(anaBand.style.height)).toBeCloseTo(20 / 60 * 56, 4)
+  expect(parseFloat(anaBand.style.top) + parseFloat(anaBand.style.height)).toBeLessThan(4 * 56)
+  expect(betoButton.tagName).toBe('BUTTON')
+  expect(parseFloat(betoButton.style.height)).toBe(90 / 60 * 56)
+  expect(blockBand.tagName).toBe('DIV')
+
+  const disclosure = document.querySelector('[data-slot="brief-calendar-events"]')!
+  expect(disclosure.querySelector('summary')?.textContent).toContain('Citas breves y bloqueos (3)')
+  const equivalentActions = [...disclosure.querySelectorAll<HTMLButtonElement>('button')]
+  expect(equivalentActions).toHaveLength(3)
+  expect(equivalentActions.every((button) => button.classList.contains('min-h-11'))).toBe(true)
+  expect(disclosure.textContent).toContain('11:30–11:50')
+  expect(disclosure.textContent).toContain('Paula')
+  expect(disclosure.textContent).toContain('23:55–23:59')
 })
 
 it('gives monthly appointment and day links separate 44 px targets instead of overlapping stretched links', () => {
@@ -46,7 +46,7 @@ it('gives monthly appointment and day links separate 44 px targets instead of ov
   expect(dayLink.classList.contains('absolute')).toBe(false)
 })
 
-it('opens each simultaneous appointment/block with its original duration, not the enlarged hit area', async () => {
+it('opens each brief appointment/block with its original duration from the equivalent actions', async () => {
   const host = document.createElement('div')
   document.body.append(host)
   const root = createRoot(host)
@@ -54,15 +54,95 @@ it('opens each simultaneous appointment/block with its original duration, not th
   const timeBlocks = [{ id: 'block1', startDateTime: at('09:00'), endDateTime: at('09:05'), reason: 'Limpieza' }]
   try {
     await act(async () => root.render(<CalendarViews {...props} view="day" bookings={bookings} timeBlocks={timeBlocks} />))
+    const disclosure = host.querySelector('[data-slot="brief-calendar-events"]')!
     for (const item of bookings) {
-      const target = [...host.querySelectorAll<HTMLButtonElement>('button')].find(button => button.getAttribute('aria-label')?.includes(`— ${item.id} —`))!
+      const target = [...disclosure.querySelectorAll<HTMLButtonElement>('button')].find(button => button.getAttribute('aria-label')?.includes(item.id))!
       await act(async () => target.click())
       expect(host.querySelector('output[aria-label="Detalle abierto"]')?.textContent).toBe(`${item.id} ${item.endDateTime}`)
     }
-    await act(async () => (host.querySelector('button[aria-label="Bloqueo: Limpieza"]') as HTMLButtonElement).click())
+    await act(async () => ([...disclosure.querySelectorAll<HTMLButtonElement>('button')].find(button => button.getAttribute('aria-label')?.includes('Limpieza'))!).click())
     expect(host.querySelector('output[aria-label="Bloqueo abierto"]')?.textContent).toBe('block1 2026-06-30T09:05:00Z')
   } finally {
     await act(async () => root.unmount())
     host.remove()
   }
+})
+
+it('pinta ambos tramos nocturnos con geometría real, un conteo único y contexto de continuación', () => {
+  const overnight = {
+    ...booking('Nocturna', '23:55', '23:59'),
+    endDateTime: '2026-07-01T00:10:00Z',
+  }
+  const document = new DOMParser().parseFromString(renderToStaticMarkup(
+    <CalendarViews {...props} view="week" bookings={[overnight]} timeBlocks={[]} />,
+  ), 'text/html')
+  const first = document.querySelector<HTMLElement>('[data-calendar-day="2026-06-30"] [data-booking-id="Nocturna"]')!
+  const second = document.querySelector<HTMLElement>('[data-calendar-day="2026-07-01"] [data-booking-id="Nocturna"]')!
+  expect(parseFloat(first.style.height)).toBeCloseTo(5 / 60 * 56, 4)
+  expect(parseFloat(second.style.height)).toBeCloseTo(10 / 60 * 56, 4)
+  expect(second.getAttribute('aria-label')).toContain('Continúa desde el día anterior')
+  expect(second.getAttribute('aria-label')).toContain('Horario completo')
+  const disclosure = document.querySelector('[data-slot="brief-calendar-events"]')!
+  expect(disclosure.querySelector('summary')?.textContent).toContain('Citas breves y bloqueos (1)')
+  expect(disclosure.querySelectorAll('button')).toHaveLength(2)
+})
+
+it('incluye un bloqueo multiday que comenzó antes y una cita regular en lanes reales', () => {
+  const timeBlocks = [{
+    id: 'vacaciones',
+    startDateTime: '2026-06-29T10:00:00Z',
+    endDateTime: '2026-07-02T10:00:00Z',
+    reason: 'Vacaciones',
+    professionalName: 'Paula',
+  }]
+  const regular = {
+    ...booking('Solape', '09:00', '10:00'),
+    startDateTime: '2026-07-01T09:00:00Z',
+    endDateTime: '2026-07-01T10:00:00Z',
+  }
+  const document = new DOMParser().parseFromString(renderToStaticMarkup(
+    <CalendarViews {...props} date="2026-07-01" view="day" bookings={[regular]} timeBlocks={timeBlocks} />,
+  ), 'text/html')
+  const day = document.querySelector('[data-calendar-day="2026-07-01"]')!
+  const block = day.querySelector<HTMLElement>('[data-time-block-id="vacaciones"]')!
+  const appointment = day.querySelector<HTMLElement>('[data-booking-id="Solape"]')!
+  expect(parseFloat(block.style.height)).toBe(24 * 56)
+  expect(block.style.width).toContain('50%')
+  expect(appointment.style.width).toContain('50%')
+  expect(block.getAttribute('aria-label')).toContain('Horario completo')
+})
+
+it('mide por tiempo real una cita que cruza la hora repetida de Santiago', () => {
+  const repeated = {
+    ...booking('Repetida', '09:00', '10:00'),
+    startDateTime: '2026-04-05T02:30:00Z',
+    endDateTime: '2026-04-05T03:45:00Z',
+  }
+  const document = new DOMParser().parseFromString(renderToStaticMarkup(
+    <CalendarViews {...props} timezone="America/Santiago" date="2026-04-04" view="day" bookings={[repeated]} timeBlocks={[]} />,
+  ), 'text/html')
+  const band = document.querySelector<HTMLElement>('[data-calendar-day="2026-04-04"] [data-booking-id="Repetida"]')!
+  expect(parseFloat(band.style.height)).toBe(70)
+  const labels = [...document.querySelectorAll('[data-slot="timeline-tick"]')].map((tick) => tick.textContent)
+  expect(labels).toContain('23:00 (-03:00)')
+  expect(labels).toContain('23:00 (-04:00)')
+})
+
+it('lista continuaciones en la agenda móvil y en cada día mensual que tocan', () => {
+  const overnight = {
+    ...booking('Nocturna', '23:55', '23:59'),
+    endDateTime: '2026-07-01T00:10:00Z',
+  }
+  const weekDocument = new DOMParser().parseFromString(renderToStaticMarkup(
+    <CalendarViews {...props} view="week" bookings={[overnight]} timeBlocks={[]} />,
+  ), 'text/html')
+  const agenda = weekDocument.querySelector('[aria-label="Agenda de la semana"]')!
+  expect(agenda.textContent?.match(/Nocturna/g)).toHaveLength(2)
+  expect(agenda.textContent).toContain('Continúa desde el día anterior')
+
+  const monthDocument = new DOMParser().parseFromString(renderToStaticMarkup(
+    <CalendarViews {...props} view="month" bookings={[overnight]} timeBlocks={[]} />,
+  ), 'text/html')
+  expect(monthDocument.querySelector('[data-calendar-day="2026-06-30"] button[aria-label^="Nocturna"]')).not.toBeNull()
+  expect(monthDocument.querySelector('[data-calendar-day="2026-07-01"] button[aria-label^="Nocturna"]')).not.toBeNull()
 })

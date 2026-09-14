@@ -12,6 +12,8 @@ import { formatMoney } from '@/lib/money'
 import { ServiceModality } from '@prisma/client'
 import { sortModalities, toggleModalityIn } from '@/lib/services/modality'
 import { ModalityCheckboxes } from './modality-checkboxes'
+import { ColorPicker } from '@/components/ui/color-picker'
+import { createServiceSchema } from '@/lib/services/schema'
 import { Pencil, AlertCircle } from 'lucide-react'
 import type { ReactNode } from 'react'
 
@@ -28,6 +30,11 @@ function clampDurationPart(value: string, min: number, max: number): number {
   const parsed = parseInt(value)
   if (Number.isNaN(parsed)) return min
   return Math.min(Math.max(parsed, min), max)
+}
+
+function parseWholeAmount(value: FormDataEntryValue | null): number {
+  const raw = typeof value === 'string' ? value.trim() : ''
+  return /^\d+$/.test(raw) ? Number(raw) : Number.NaN
 }
 
 function ServicePreview({ name, description, price, durationMinutes, depositAmount, color, currency }: {
@@ -84,13 +91,13 @@ export function ServiceForm({
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [selectedColor, setSelectedColor] = useState(service?.pastelColor || PASTEL_COLORS[0])
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   // Un servicio existente sin modalidades sólo puede venir de datos corruptos; el
   // fallback evita un formulario que no se puede guardar (el schema exige >= 1).
   const [modalities, setModalities] = useState<ServiceModality[]>(
     service?.modalities?.length ? sortModalities(service.modalities) : [ServiceModality.on_site],
   )
-  const [customHex, setCustomHex] = useState(service?.pastelColor || '')
+  const [customHex, setCustomHex] = useState(service?.pastelColor || PASTEL_COLORS[0])
 
   const [previewName, setPreviewName] = useState(service?.name || '')
   const [previewDescription, setPreviewDescription] = useState(service?.description || '')
@@ -131,36 +138,31 @@ export function ServiceForm({
     setShowCustomDuration(!DURATION_PRESETS.includes(totalMinutes))
   }
 
-  function handleHexChange(value: string) {
-    setCustomHex(value)
-    if (HEX_COLOR_REGEX.test(value)) {
-      setSelectedColor(value)
-    }
-  }
-
   function toggleModality(modality: ServiceModality) {
     // El piso de "al menos una" vive en toggleModalityIn: el schema lo rechazaría
     // igual, pero el error llegaría recién al guardar.
     setModalities((prev) => toggleModalityIn(prev, modality))
   }
 
-  function handleColorPick(color: string) {
-    setSelectedColor(color)
-    setCustomHex(color)
-  }
-
-  async function handleSubmit(formData: FormData) {
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const formData = new FormData(event.currentTarget)
     setLoading(true)
     setError(null)
+    setFieldErrors({})
 
     if (!duration || duration < 15) {
       setError('La duración mínima es 15 minutos')
+      setFieldErrors({ durationMinutes: 'La duración mínima es 15 minutos' })
+      event.currentTarget.querySelector<HTMLInputElement>(`#${durationHoursId}`)?.focus()
       setLoading(false)
       return
     }
 
     if (duration > MAX_DURATION_MINUTES) {
       setError('La duración máxima es 8 horas')
+      setFieldErrors({ durationMinutes: 'La duración máxima es 8 horas' })
+      event.currentTarget.querySelector<HTMLInputElement>(`#${durationHoursId}`)?.focus()
       setLoading(false)
       return
     }
@@ -170,21 +172,35 @@ export function ServiceForm({
       description: (formData.get('description') as string).trim() || null,
       category: String(formData.get('category') ?? '').trim() || null,
       durationMinutes: parseInt(formData.get('durationMinutes') as string),
-      price: parseInt(formData.get('price') as string),
-      depositAmount: parseInt(formData.get('depositAmount') as string),
-      pastelColor: selectedColor,
+      price: parseWholeAmount(formData.get('price')),
+      depositAmount: parseWholeAmount(formData.get('depositAmount')),
+      pastelColor: customHex,
       modalities,
       isActive: true,
     }
 
-    if (service) {
-      data.sortOrder = service.sortOrder ?? 0
+    if (service) data.sortOrder = service.sortOrder ?? 0
+    const parsed = createServiceSchema.safeParse(data)
+    if (!parsed.success) {
+      const errors = parsed.error.issues.reduce<Record<string, string>>((accumulator, issue) => {
+        const field = String(issue.path[0] ?? 'form')
+        if (!accumulator[field]) accumulator[field] = issue.message
+        return accumulator
+      }, {})
+      if (Number.isNaN(data.price)) errors.price = 'Ingresa un precio en pesos, sin decimales.'
+      if (Number.isNaN(data.depositAmount)) errors.depositAmount = 'Ingresa un abono en pesos, sin decimales.'
+      setFieldErrors(errors)
+      const firstField = Object.keys(errors)[0]
+      const selector = firstField === 'pastelColor' ? `#${formId}-color` : `[name="${firstField}"]`
+      event.currentTarget.querySelector<HTMLElement>(selector)?.focus()
+      setLoading(false)
+      return
     }
 
     try {
       const res = service
-        ? await updateService(service.id, data)
-        : await createService(data)
+        ? await updateService(service.id, parsed.data)
+        : await createService(parsed.data)
       if (!res.ok) { setError(res.error); return }
       setOpen(false)
       onSuccess?.()
@@ -210,11 +226,11 @@ export function ServiceForm({
             Configura el nombre, precio, duración y color del servicio.
           </DialogDescription>
         </DialogHeader>
-        <form action={handleSubmit} className="space-y-5">
-          <FormField id={`${formId}-category`} label="Categoría (opcional)" help="Agrupa los servicios en la página de reservas. Por ejemplo: Cortes, Barba o Tratamientos.">
+        <form noValidate onSubmit={handleSubmit} className="space-y-5">
+          <FormField id={`${formId}-category`} label="Categoría (opcional)" error={fieldErrors.category} help="Agrupa los servicios en la página de reservas. Por ejemplo: Cortes, Barba o Tratamientos.">
             {(a11y) => <Input {...a11y} density="form" id={`${formId}-category`} name="category" defaultValue={service?.category ?? ''} maxLength={60} />}
           </FormField>
-          <FormField id={`${formId}-name`} label="Nombre" required>
+          <FormField id={`${formId}-name`} label="Nombre" required error={fieldErrors.name}>
             {(a11y) => (
               <Input
                 {...a11y}
@@ -227,7 +243,7 @@ export function ServiceForm({
               />
             )}
           </FormField>
-          <FormField id={`${formId}-description`} label="Descripción">
+          <FormField id={`${formId}-description`} label="Descripción" error={fieldErrors.description}>
             {(a11y) => (
               <Textarea
                 {...a11y}
@@ -240,7 +256,7 @@ export function ServiceForm({
             )}
           </FormField>
           <div className="grid grid-cols-2 gap-4">
-            <FormField id={`${formId}-price`} label="Precio" required>
+            <FormField id={`${formId}-price`} label="Precio" required error={fieldErrors.price}>
               {(a11y) => (
                 <Input
                   {...a11y}
@@ -254,7 +270,7 @@ export function ServiceForm({
                 />
               )}
             </FormField>
-            <FormField id={`${formId}-deposit`} label="Abono" required>
+            <FormField id={`${formId}-deposit`} label="Abono" required error={fieldErrors.depositAmount}>
               {(a11y) => (
                 <Input
                   {...a11y}
@@ -270,7 +286,7 @@ export function ServiceForm({
             </FormField>
           </div>
 
-          <fieldset className="space-y-2">
+          <fieldset aria-describedby={fieldErrors.durationMinutes ? `${formId}-duration-error` : undefined} className="space-y-2">
             <legend className="text-sm font-medium text-foreground">¿Cuánto dura?</legend>
             {/* Valor real que viaja en el form; los chips solo lo controlan. */}
             <input type="hidden" name="durationMinutes" value={duration} />
@@ -343,6 +359,7 @@ export function ServiceForm({
             <p className="text-xs text-muted-foreground">
               Total: {duration > 0 ? formatDuration(duration) : '0 min'}
             </p>
+            {fieldErrors.durationMinutes && <p id={`${formId}-duration-error`} role="alert" className="text-sm text-destructive">{fieldErrors.durationMinutes}</p>}
           </fieldset>
           <ModalityCheckboxes
             selected={modalities}
@@ -355,43 +372,30 @@ export function ServiceForm({
             }
           />
 
-          <fieldset>
-            <legend className="text-sm font-medium text-foreground">Color</legend>
-            <div className="flex gap-2 mt-2">
-              {PASTEL_COLORS.map((color) => (
-                <button
-                  key={color}
-                  type="button"
-                  aria-label={`Seleccionar color ${color}`}
-                  aria-pressed={selectedColor === color}
-                  onClick={() => handleColorPick(color)}
-                  className={`size-8 rounded-full border-2 transition ${selectedColor === color ? 'scale-110 border-primary' : 'border-transparent'}`}
-                  style={{ backgroundColor: color }}
-                />
-              ))}
-            </div>
-            <div className="mt-3 flex items-end gap-2">
-              <div className="w-36">
-                <FormField id={`${formId}-color`} label="Código hexadecimal">
-                  {(a11y) => (
-                    <Input
-                      {...a11y}
-                      id={`${formId}-color`}
-                      density="form"
-                      className="font-mono"
-                      placeholder="#RRGGBB"
-                      value={customHex}
-                      onChange={(e) => handleHexChange(e.target.value)}
-                      maxLength={7}
-                    />
-                  )}
-                </FormField>
-              </div>
-              {HEX_COLOR_REGEX.test(customHex) && (
-                <div className="mb-2 size-6 shrink-0 rounded-full border border-border" style={{ backgroundColor: customHex }} />
-              )}
-            </div>
-          </fieldset>
+          <FormField id={`${formId}-color`} label="Color del servicio" required error={fieldErrors.pastelColor}>
+            {(a11y) => (
+              <ColorPicker
+                id={`${formId}-color`}
+                label="Color del servicio"
+                value={customHex}
+                onChange={(value) => {
+                  setCustomHex(value)
+                  if (HEX_COLOR_REGEX.test(value)) {
+                  setFieldErrors((errors) => {
+                      const remaining = { ...errors }
+                      delete remaining.pastelColor
+                      return remaining
+                    })
+                  }
+                }}
+                presets={PASTEL_COLORS}
+                required
+                error={a11y['aria-invalid']}
+                describedBy={a11y['aria-describedby']}
+                hideLabel
+              />
+            )}
+          </FormField>
 
           <div>
             <p className="mb-2 text-sm font-medium text-foreground">Vista previa</p>
@@ -401,7 +405,7 @@ export function ServiceForm({
               price={previewPrice}
               durationMinutes={duration}
               depositAmount={previewDeposit}
-              color={selectedColor}
+              color={customHex}
               currency={currency}
             />
           </div>

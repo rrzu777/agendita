@@ -10,8 +10,12 @@ import {
   skipSeriesOccurrence, overrideSeriesOccurrence, updateTimeBlockSeries, deleteTimeBlockSeries,
 } from '@/server/actions/time-blocks'
 import type { ActionResult } from '@/lib/actions/result'
-import { deriveBlockFormValues } from '@/lib/calendar/block-form-values'
-import { localDateTimeToUtc } from '@/lib/availability/timezone'
+import {
+  deriveBlockFormValues,
+  localDateDaySpan,
+  resolveBlockFormInterval,
+  shiftLocalDate,
+} from '@/lib/calendar/block-form-values'
 import { BlockFormFields } from './block-form-fields'
 import type { CalendarTimeBlock } from './time-block-card'
 
@@ -20,13 +24,17 @@ interface Props {
   timezone: string
   open: boolean
   onOpenChange: (open: boolean) => void
+  onCloseAutoFocus?: (event: Event) => void
 }
 
 type Scope = 'occurrence' | 'series'
 
-export function EditSeriesOccurrenceDialog({ block, timezone, open, onOpenChange }: Props) {
+export function EditSeriesOccurrenceDialog({ block, timezone, open, onOpenChange, onCloseAutoFocus }: Props) {
   const initial = deriveBlockFormValues(block, timezone)
+  const initialDaySpan = localDateDaySpan(initial.date, initial.endDate)
   const [date, setDate] = useState(initial.date)
+  const [endDate, setEndDate] = useState(initial.endDate)
+  const [endDateTouched, setEndDateTouched] = useState(false)
   const [startTime, setStartTime] = useState(initial.startTime)
   const [endTime, setEndTime] = useState(initial.endTime)
   const [reason, setReason] = useState(initial.reason)
@@ -38,6 +46,16 @@ export function EditSeriesOccurrenceDialog({ block, timezone, open, onOpenChange
 
   const seriesId = block.seriesId as string
   const occurrenceDate = new Date(block.occurrenceDate as string)
+
+  function handleDateChange(nextDate: string) {
+    setDate(nextDate)
+    if (!endDateTouched) setEndDate(nextDate ? shiftLocalDate(nextDate, initialDaySpan) : '')
+  }
+
+  function handleEndDateChange(nextEndDate: string) {
+    setEndDateTouched(true)
+    setEndDate(nextEndDate)
+  }
 
   function reset() {
     setPendingScope(null)
@@ -75,14 +93,28 @@ export function EditSeriesOccurrenceDialog({ block, timezone, open, onOpenChange
   }
 
   function saveScope(scope: Scope, confirmed = false) {
+    setError(null)
+    if (!startTime || !endTime) {
+      setError('Define hora de inicio y fin')
+      return
+    }
+    if (scope === 'occurrence' && (!date || !endDate)) {
+      setError('Selecciona fecha de inicio y fin')
+      return
+    }
     const call =
       scope === 'occurrence'
-        ? () => overrideSeriesOccurrence(seriesId, occurrenceDate, {
-            startDateTime: localDateTimeToUtc(date, startTime, timezone),
-            endDateTime: localDateTimeToUtc(date, endTime, timezone),
-            reason: reason || null,
-            confirmed,
-          })
+        ? () => {
+            // La resolución ocurre dentro de `run`, que captura también los
+            // formatos incompletos que puedan llegar desde el input.
+            const interval = resolveBlockFormInterval(block, { date, endDate, startTime, endTime }, timezone)
+            return overrideSeriesOccurrence(seriesId, occurrenceDate, {
+              startDateTime: interval.start,
+              endDateTime: interval.end,
+              reason: reason || null,
+              confirmed,
+            })
+          }
         // Editar toda la serie = cambiar hora/motivo de toda la serie (conserva días y fin).
         : () => updateTimeBlockSeries(seriesId, { startTime, endTime, reason: reason || null, confirmed })
     // Si hay reservas que chocan, el servidor no guarda y pide confirmación:
@@ -100,7 +132,7 @@ export function EditSeriesOccurrenceDialog({ block, timezone, open, onOpenChange
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent>
+      <DialogContent onCloseAutoFocus={onCloseAutoFocus}>
         {overlapPrompt ? (
           <>
             <DialogHeader>
@@ -147,7 +179,8 @@ export function EditSeriesOccurrenceDialog({ block, timezone, open, onOpenChange
             </DialogHeader>
             <div className="space-y-4">
               <BlockFormFields
-                date={date} onDateChange={setDate}
+                date={date} onDateChange={handleDateChange}
+                endDate={endDate} onEndDateChange={handleEndDateChange}
                 startTime={startTime} onStartTimeChange={setStartTime}
                 endTime={endTime} onEndTimeChange={setEndTime}
                 reason={reason} onReasonChange={setReason}

@@ -10,8 +10,12 @@ async function _saveOnboardingStep(businessId: string, step: number) {
   if (sessionBusinessId !== businessId) {
     throw new UserError('No autorizado')
   }
-  await prisma.business.update({
-    where: { id: businessId },
+  if (!Number.isInteger(step) || step < 0 || step > 4) {
+    throw new UserError('Paso de configuración inválido')
+  }
+  // A delayed tab request must not restore onboardingStep after completion.
+  await prisma.business.updateMany({
+    where: { id: businessId, onboardingCompletedAt: null },
     data: { onboardingStep: step },
   })
 }
@@ -23,6 +27,17 @@ async function _completeOnboarding(businessId: string) {
   if (sessionBusinessId !== businessId) {
     throw new UserError('No autorizado')
   }
+
+  const current = await prisma.business.findUnique({
+    where: { id: businessId },
+    select: { onboardingCompletedAt: true },
+  })
+  if (!current) {
+    throw new UserError('Negocio no encontrado')
+  }
+  // Completion is terminal and idempotent: a retry after a lost response is a
+  // success, without re-running the mutation or reopening onboardingStep.
+  if (current.onboardingCompletedAt) return
 
   const [servicesCount, availabilityCount] = await Promise.all([
     prisma.service.count({ where: { businessId, isActive: true } }),
@@ -40,13 +55,22 @@ async function _completeOnboarding(businessId: string) {
     throw new UserError('Debes configurar al menos un día de atención antes de finalizar')
   }
 
-  await prisma.business.update({
-    where: { id: businessId },
+  const completed = await prisma.business.updateMany({
+    where: { id: businessId, onboardingCompletedAt: null },
     data: {
       onboardingCompletedAt: new Date(),
       onboardingStep: null,
     },
   })
+
+  if (completed.count === 0) {
+    const latest = await prisma.business.findUnique({
+      where: { id: businessId },
+      select: { onboardingCompletedAt: true },
+    })
+    if (latest?.onboardingCompletedAt) return
+    throw new UserError('No pudimos finalizar la configuración. Intenta de nuevo.')
+  }
 }
 
 export const completeOnboarding = action(_completeOnboarding)

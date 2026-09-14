@@ -54,9 +54,11 @@ The weekly calendar uses a chronological agenda on phones and the existing time
 grid on larger viewports. Both open the same booking drawer, which returns focus
 to the appointment that opened it.
 
-Calendar hit areas are packed together across appointments and time blocks at a
-minimum 44 px height; dense columns scroll internally without covering another
-action or modifying appointment duration. Customer detail uses the canonical
+Calendar appointments and time blocks keep their true start, end, height, and
+overlap lanes. Events whose painted band is under 44 px are non-interactive in
+the grid and have an equivalent 44 px detail action in the immediately preceding
+“Citas breves y bloqueos” disclosure, grouped by day; longer bands open details
+directly. Both paths restore focus to their trigger. Customer detail uses the canonical
 `Switch` size `touch`: a compact track inside a 56×44 px target. Existing switch
 sizes remain unchanged for other workflows.
 

@@ -115,6 +115,26 @@ describe('EditSeriesOccurrenceDialog', () => {
 
     await unmount()
   })
+
+  it('muestra validación en fechas vacías sin resolverlas fuera del manejo de errores', async () => {
+    const { unmount } = await renderDialog()
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
+    for (const id of ['block-date', 'block-end-date']) {
+      const input = document.body.querySelector<HTMLInputElement>(`#${id}`)!
+      await act(async () => {
+        setter.call(input, '')
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+        input.dispatchEvent(new Event('change', { bubbles: true }))
+      })
+    }
+
+    await clickButton(document.body, 'Guardar cambios')
+    await clickButton(document.body, 'Solo este día')
+
+    expect(mockOverrideSeriesOccurrence).not.toHaveBeenCalled()
+    expect(document.body.textContent).toContain('Selecciona fecha de inicio y fin')
+    await unmount()
+  })
 })
 
 async function renderDialog() {

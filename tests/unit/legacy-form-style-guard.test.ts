@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 const SOURCE_ROOT = join(process.cwd(), 'src')
 const SOURCE_EXTENSIONS = new Set(['.css', '.ts', '.tsx'])
 const NATIVE_INPUT_PRIMITIVE = 'src/components/ui/input.tsx'
+const NATIVE_COLOR_PICKER = 'src/components/ui/color-picker.tsx'
 const NATIVE_SELECT_EXCEPTIONS = new Set([
   'src/components/dashboard/calendar-views.tsx',
   'src/components/ui/native-select.tsx',
@@ -40,7 +41,9 @@ describe('legacy form style guard', () => {
       return tags
         .filter((tag) => {
           const type = tag.match(/\btype\s*=\s*["']([^"']+)["']/)?.[1]
-          return !type || !INTENTIONAL_NATIVE_INPUT_TYPES.has(type)
+          return !type
+            || (!INTENTIONAL_NATIVE_INPUT_TYPES.has(type)
+              && !(type === 'color' && projectPath === NATIVE_COLOR_PICKER))
         })
         .map(() => projectPath)
     })
