@@ -102,6 +102,11 @@ export function resolveBusinessTheme(input: BusinessThemeInput): BusinessTheme {
   }
 }
 
+/** The one safe color contract for browser chrome and the CSS tenant theme. */
+export function businessThemeColor(input: BusinessThemeInput): string {
+  return resolveBusinessTheme(input).brand
+}
+
 export type BusinessThemeCssVariables = Record<
   | '--tenant-brand'
   | '--tenant-brand-strong'

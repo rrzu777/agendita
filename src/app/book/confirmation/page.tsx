@@ -30,6 +30,7 @@ import { isPushBookingEligible } from '@/lib/push/eligibility'
 import { InstallAppBanner } from '@/components/pwa/install-app-banner'
 import { BusinessTheme } from '@/components/theme/business-theme'
 import type { Viewport } from 'next'
+import { businessThemeColor } from '@/lib/theme/business-theme'
 
 interface BookingConfirmationPageProps {
   searchParams: Promise<{ bookingId?: string }>
@@ -38,8 +39,11 @@ interface BookingConfirmationPageProps {
 export async function generateViewport({ searchParams }: BookingConfirmationPageProps): Promise<Viewport> {
   const { bookingId } = await searchParams
   if (!bookingId) return { themeColor: '#f7f7f4' }
-  const booking = await prisma.booking.findUnique({ where: { id: bookingId }, select: { business: { select: { brandColor: true } } } }).catch(() => null)
-  return { themeColor: booking?.business.brandColor || '#f7f7f4' }
+  const booking = await prisma.booking.findUnique({
+    where: { id: bookingId },
+    select: { business: { select: { brandColor: true, category: true, visualStyle: true } } },
+  }).catch(() => null)
+  return { themeColor: booking ? businessThemeColor(booking.business) : '#f7f7f4' }
 }
 
 export default async function BookingConfirmationPage({ searchParams }: BookingConfirmationPageProps) {

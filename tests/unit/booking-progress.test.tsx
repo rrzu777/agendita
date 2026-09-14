@@ -12,6 +12,8 @@ describe('BookingProgress', () => {
     for (const label of ['Servicios', 'Profesional', 'Fecha y hora', 'Tus datos', 'Pago y políticas', 'Confirmación']) {
       expect(html).toContain(label)
     }
+    expect(html).not.toContain('text-[11px]')
+    expect(html).toContain('text-right text-sm text-muted-foreground">Servicios')
   })
 
   it('representa el paso profesional auto-resuelto sin alterar el paso actual', () => {

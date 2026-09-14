@@ -76,6 +76,18 @@ describe('/book/confirmation — CTA de cuenta', () => {
     await expect(generateViewport({ searchParams })).resolves.toEqual({ themeColor: '#f7f7f4' })
   })
 
+  it('normaliza un color inválido del tenant en el retorno de pago', async () => {
+    mockFindUnique.mockResolvedValue(baseBooking({
+      business: {
+        ...baseBooking().business,
+        brandColor: 'red; background:url(javascript:alert(1))',
+        category: 'barber',
+        visualStyle: 'contrast',
+      },
+    }))
+    await expect(generateViewport({ searchParams })).resolves.toEqual({ themeColor: '#35524A' })
+  })
+
   it.each([
     ['success', { status: 'confirmed' }, 'Reserva confirmada'],
     ['verifying', { status: 'pending_payment', holdExpiresAt: new Date(Date.now() + 3_600_000), depositPaid: 0, remainingBalance: 20000, payments: [{ status: 'pending', provider: 'mercado_pago', providerPaymentId: 'mp-1', amount: 20000, proofKey: null }] }, 'Verificando tu pago'],

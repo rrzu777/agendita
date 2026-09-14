@@ -22,5 +22,6 @@ describe('public booking review contract', () => {
     expect(read('src/components/public/business-profile.tsx')).toContain('safe-area-inset-bottom')
     expect(read('src/app/layout.tsx')).toContain('viewportFit: "cover"')
     expect(read('src/components/booking/booking-progress.tsx')).not.toContain('text-[10px]')
+    expect(read('src/components/booking/step-customer.tsx')).toMatch(/Textarea id="booking-customer-notes" className="resize-none"/)
   })
 })

@@ -45,7 +45,7 @@ export function BookingProgress({
             >
               <div className={`mb-1 h-1 rounded-full ${complete || active ? 'bg-primary' : 'bg-secondary'}`} />
               <div className="flex min-h-11 items-start gap-1.5 py-1">
-                <span className={`flex size-5 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold ${complete ? 'bg-primary text-primary-foreground' : active ? 'border border-primary text-primary' : 'border border-border text-muted-foreground'}`}>
+                <span className={`flex size-5 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${complete ? 'bg-primary text-primary-foreground' : active ? 'border border-primary text-primary' : 'border border-border text-muted-foreground'}`}>
                   {complete ? <Check className="size-3" aria-hidden="true" /> : index + 1}
                 </span>
                 <span className={`sr-only min-w-0 text-xs leading-4 sm:not-sr-only ${active ? 'font-semibold text-primary' : 'text-muted-foreground'}`}>

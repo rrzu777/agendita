@@ -3,6 +3,7 @@ import { BusinessTheme } from '@/components/theme/business-theme'
 import { getBookingBusinessBySubdomain } from '@/lib/business/public'
 import { getTenantFromRequest } from '@/lib/tenant/resolver'
 import type { Viewport } from 'next'
+import { businessThemeColor } from '@/lib/theme/business-theme'
 
 async function tenantBusiness() {
   const tenant = await getTenantFromRequest().catch(() => null)
@@ -11,7 +12,7 @@ async function tenantBusiness() {
 
 export async function generateViewport(): Promise<Viewport> {
   const business = await tenantBusiness()
-  return { themeColor: business?.brandColor || '#f7f7f4' }
+  return { themeColor: business ? businessThemeColor(business) : '#f7f7f4' }
 }
 
 export default async function BookingLayout({ children }: { children: ReactNode }) {

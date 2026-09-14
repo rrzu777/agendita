@@ -103,6 +103,16 @@ const initialData: BookingData = {
   idempotencyKey: null,
 }
 
+const STEP_LABEL: Record<StepKey, string> = {
+  service: 'Servicios',
+  professional: 'Profesional',
+  date: 'Fecha y hora',
+  time: 'Fecha y hora',
+  customer: 'Tus datos',
+  payment: 'Pago y políticas',
+  confirmation: 'Confirmación',
+}
+
 interface BookingWizardProps {
   businessId: string
   slug: string
@@ -289,7 +299,7 @@ export function BookingWizard({ businessId, slug, business, timezone, currency, 
         <p className="font-semibold">{formatDuration(data.serviceDuration)} · Total {formatMoney(data.servicePrice, currency)} · {data.serviceDeposit ? `Abono ${formatMoney(data.serviceDeposit, currency)}` : 'Sin abono'}</p>
         {data.professionalName && <p>Te atiende: {data.professionalName}{choice.kind === 'ask' && currentStep !== 'professional' && <button type="button" className="ml-2 inline-flex min-h-11 items-center px-2 underline" onClick={() => goToStep('professional')}>Cambiar profesional</button>}</p>}
       </aside>}
-      <section ref={stepRegion} id="booking-step-content" tabIndex={-1} aria-label={`Paso ${currentStep}`} className="scroll-mt-20 rounded-[var(--radius)] border border-border bg-card p-5 outline-none sm:p-8">
+      <section ref={stepRegion} id="booking-step-content" tabIndex={-1} aria-label={`Paso: ${STEP_LABEL[currentStep]}`} className="scroll-mt-20 rounded-[var(--radius)] border border-border bg-card p-5 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:ring-offset-2 sm:p-8">
         {currentStep === 'service' && (
           <StepService data={data} services={services} currency={currency} selectionError={choice.kind === 'unavailable' ? 'Ningún profesional realiza todos estos servicios. Quita uno o resérvalos por separado.' : null}
             selectionCompatible={(serviceIds, modality) => professionalChoiceForServices(professionals, serviceIds, modality).kind !== 'unavailable'}

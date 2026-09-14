@@ -141,7 +141,7 @@ export function StepCustomer({ data, sessionEmail, onLoginCta, onSubmit, onBack 
           <summary className="cursor-pointer font-medium text-primary">Agregar una nota (opcional)</summary>
           <div className="mt-4">
         <FormField id="booking-customer-notes" label="Notas" help="Opcional">
-          {(a11y) => <Textarea id="booking-customer-notes" value={formData.customerNotes} maxLength={1000} onChange={e => update('customerNotes', e.target.value)} placeholder="¿Algo que debamos saber?" density="touch" {...a11y} />}
+          {(a11y) => <Textarea id="booking-customer-notes" className="resize-none" value={formData.customerNotes} maxLength={1000} onChange={e => update('customerNotes', e.target.value)} placeholder="¿Algo que debamos saber?" density="touch" {...a11y} />}
         </FormField>
           </div>
         </details>

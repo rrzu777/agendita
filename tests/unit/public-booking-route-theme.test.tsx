@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 
 const mocks = vi.hoisted(() => ({ publicBusiness: vi.fn(), bookingBusiness: vi.fn(), subdomainBusiness: vi.fn(), tenant: vi.fn() }))
@@ -11,6 +11,22 @@ vi.mock('@/lib/tenant/resolver', () => ({ getTenantFromRequest: mocks.tenant }))
 
 describe('tenant theme route layouts', () => {
   const tenant = { category: 'barber', brandColor: '#35524A', visualStyle: 'contrast' }
+
+  beforeEach(() => vi.clearAllMocks())
+
+  it('normaliza el themeColor del perfil, alias y ruta canónica', async () => {
+    mocks.publicBusiness.mockResolvedValue({ ...tenant, brandColor: 'red; background:url(javascript:alert(1))' })
+    mocks.bookingBusiness.mockResolvedValue({ ...tenant, category: 'nails', brandColor: 'not-a-color' })
+    mocks.tenant.mockResolvedValue({ subdomain: 'barber' })
+    mocks.subdomainBusiness.mockResolvedValue({ ...tenant, category: 'other', brandColor: '#abc' })
+    const { generateViewport: profileViewport } = await import('@/app/b/[slug]/layout')
+    const { generateViewport: aliasViewport } = await import('@/app/book/[slug]/layout')
+    const { generateViewport: canonicalViewport } = await import('@/app/book/layout')
+
+    await expect(profileViewport({ params: Promise.resolve({ slug: 'barber' }) })).resolves.toEqual({ themeColor: '#35524A' })
+    await expect(aliasViewport({ params: Promise.resolve({ slug: 'barber' }) })).resolves.toEqual({ themeColor: '#B64D68' })
+    await expect(canonicalViewport()).resolves.toEqual({ themeColor: '#4F5D54' })
+  })
 
   it('mantiene el tema del perfil mientras carga o falla la ruta dinámica', async () => {
     mocks.publicBusiness.mockResolvedValue(tenant)

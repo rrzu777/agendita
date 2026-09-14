@@ -90,7 +90,10 @@ describe('el wizard con equipo', () => {
     expect(container.textContent).toContain('Paso 3 de 6')
     expect(container.textContent).toContain('Asignado automáticamente')
     expect(container.textContent).toContain('Fecha')
-    expect(document.activeElement).toBe(container.querySelector('#booking-step-content'))
+    const stepRegion = container.querySelector('#booking-step-content')
+    expect(document.activeElement).toBe(stepRegion)
+    expect(stepRegion?.getAttribute('aria-label')).toBe('Paso: Fecha y hora')
+    expect(stepRegion?.className).toContain('focus-visible:ring-3')
     expect(scroll).toHaveBeenCalledWith({ block: 'start', behavior: 'auto' })
   })
 

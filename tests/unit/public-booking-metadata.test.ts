@@ -18,7 +18,7 @@ describe('public booking metadata', () => {
       title: 'Mimos Nails — Reserva tu hora',
       description: 'Elige servicios, profesional y horario para reservar en Mimos Nails.',
     })
-  })
+  }, 10_000) // Importing the Next route can exceed Vitest's 5 s default under the full-suite worker load.
 
   it('names the tenant on the subdomain booking route too', async () => {
     mocks.getTenant.mockResolvedValue({ subdomain: 'mimosnails' })
