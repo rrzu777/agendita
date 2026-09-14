@@ -259,7 +259,7 @@ test.describe('main beta flows', () => {
     await page.locator('input[name="price"]').fill('19000')
     await page.getByRole('button', { name: '45 min', exact: true }).click()
     await page.locator('input[name="depositAmount"]').fill('5000')
-    await page.getByRole('button', { name: 'Guardar' }).click()
+    await page.getByRole('button', { name: 'Guardar', exact: true }).click()
     await expect(page.getByText(serviceName)).toBeVisible({ timeout: 15000 })
     await page.waitForLoadState('networkidle')
 
