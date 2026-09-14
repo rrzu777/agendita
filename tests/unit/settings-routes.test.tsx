@@ -11,6 +11,7 @@ const {
   mockBusinessFindUnique,
   mockBankTransferForm,
   mockProfileForm,
+  mockGetColorFavorites,
   mockRedirect,
   AuthError,
   ForbiddenError,
@@ -23,6 +24,7 @@ const {
   mockBusinessFindUnique: vi.fn(),
   mockBankTransferForm: vi.fn(),
   mockProfileForm: vi.fn(),
+  mockGetColorFavorites: vi.fn(),
   mockRedirect: vi.fn((url: string) => { throw new Error(`REDIRECT:${url}`) }),
   AuthError: class AuthError extends Error {},
   ForbiddenError: class ForbiddenError extends Error {},
@@ -35,6 +37,7 @@ vi.mock('@/lib/auth/server', () => ({
   requireBusinessRole: mockRequireBusinessRole,
 }))
 vi.mock('@/lib/business/settings-access', () => ({ requireSettingsPageAccess: mockRequireSettingsPageAccess }))
+vi.mock('@/server/actions/color-favorites', () => ({ getColorFavorites: mockGetColorFavorites }))
 vi.mock('@/lib/payments/factory', () => ({
   resolveOnlinePaymentAvailabilityForBusiness: mockPaymentProviderQuery,
 }))
@@ -114,6 +117,7 @@ describe('settings routes', () => {
     mockPaymentProviderQuery.mockResolvedValue(null)
     mockBankAccountFindUnique.mockResolvedValue(null)
     mockBusinessFindUnique.mockResolvedValue(null)
+    mockGetColorFavorites.mockResolvedValue([])
   })
 
   it('redirects settings root to profile', async () => {

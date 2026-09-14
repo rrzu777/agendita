@@ -136,15 +136,14 @@ describe('BookingRowActions', () => {
     expect(html).not.toContain('disabled=""')
   })
 
-  it('con el plazo vencido deshabilita Cobrar y explica por qué', () => {
-    // El server rechaza este cobro (assertBookingPayable). Antes el botón estaba
-    // habilitado y el clic moría en un error; que ahora DESAPAREZCA sin decir
-    // nada sería igual de malo, así que queda deshabilitado con el motivo.
+  it('con el plazo vencido retira Cobrar, explica por qué y conserva el overflow', () => {
+    // El server rechaza este cobro (assertBookingPayable). La acción desaparece,
+    // pero la fila explica la salida y mantiene las demás acciones en overflow.
     const booking = rowBooking({ status: 'pending_payment', holdExpiresAt: new Date(NOW.getTime() - HORA) })
     const html = renderToStaticMarkup(<BookingRowActions booking={booking as never} businessCurrency="CLP" now={NOW} />)
-    expect(html).toContain('disabled=""')
+    expect(html).not.toContain('Cobrar')
+    expect(html).toContain('Venció el plazo para pagar')
     expect(html).toContain('Revivir')
-    // Cancelar sigue disponible en el menú: la fila nunca queda muda.
     expect(html).toContain('Más acciones')
   })
 

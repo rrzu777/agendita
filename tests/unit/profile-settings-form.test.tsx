@@ -253,7 +253,7 @@ describe('ProfileSettingsForm', () => {
     writeSettingsDraft(sessionStorage, 'biz-1:profile', 1, profileValues, { ...profileValues, name: 'Borrador recuperado' })
     await renderProfile()
 
-    expect(container.textContent).toContain('Recuperamos un borrador local')
+    await vi.waitFor(() => expect(container.textContent).toContain('Recuperamos un borrador local'))
     expect(getInput(container, 'Nombre del negocio').value).toBe('Borrador recuperado')
   })
 

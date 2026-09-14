@@ -106,10 +106,6 @@ export function BookingRowActions({
     <Button type="button" size="sm" variant="outline" className="min-h-11" onClick={() => setPayOpen(true)}>
       Cobrar
     </Button>
-  ) : isPending && blockedReason ? (
-    <Button type="button" size="sm" variant="outline" className="min-h-11" disabled title={blockedReason}>
-      Cobrar
-    </Button>
   ) : null
 
   const hasMenu = !!contactData || isActionable
