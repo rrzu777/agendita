@@ -5,7 +5,7 @@ import { prisma } from '@/lib/db'
 import { OnboardingWizard } from '@/components/onboarding/onboarding-wizard'
 import { businessScheduleWhere } from '@/lib/availability/scope'
 
-export const metadata = { title: 'Configura tu negocio — Agendita' }
+export const metadata = { title: 'Configura tu negocio' }
 
 export default async function OnboardingPage() {
   const userData = await getCurrentUserWithBusiness()
