@@ -7,6 +7,7 @@ import { cancelMyBooking } from '@/server/actions/my-bookings'
 import { selfServiceBlockedMessage } from '@/lib/bookings/self-service'
 import { Button } from '@/components/ui/button'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog'
+import { useClientBookingNotice } from '@/components/client/client-shell'
 
 export function BookingActions({
   bookingId,
@@ -35,6 +36,7 @@ export function BookingActions({
   rescheduleBlockedReason: string | null
 }) {
   const router = useRouter()
+  const announceCancellation = useClientBookingNotice()
   const [pending, startTransition] = useTransition()
   const [confirming, setConfirming] = useState(false)
   const [error, setError] = useState('')
@@ -56,6 +58,7 @@ export function BookingActions({
           setError(res.error)
           return
         }
+        announceCancellation?.({ serviceName, startsAtLabel })
         setConfirming(false)
         router.refresh()
       } catch {

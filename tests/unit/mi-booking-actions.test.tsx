@@ -1,13 +1,16 @@
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
+import { useState } from 'react'
 import { describe, it, expect, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 
-vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }) }))
-vi.mock('@/server/actions/my-bookings', () => ({ cancelMyBooking: vi.fn() }))
+const { refreshMock, cancelBookingMock } = vi.hoisted(() => ({ refreshMock: vi.fn(), cancelBookingMock: vi.fn() }))
+vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: refreshMock, push: vi.fn() }) }))
+vi.mock('@/server/actions/my-bookings', () => ({ cancelMyBooking: cancelBookingMock }))
 
 import { BookingActions } from '@/app/mi/[slug]/booking-actions'
 import { rescheduleBlockedReason } from '@/lib/bookings/hold'
+import { ClientBusinessShell } from '@/components/client/client-shell'
 
 describe('BookingActions', () => {
   it('canManage: true → botón Cancelar reserva + link Reprogramar', () => {
@@ -95,6 +98,50 @@ describe('BookingActions', () => {
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
     expect(document.activeElement).toBe(trigger)
+
+    await act(async () => root.unmount())
+    host.remove()
+  })
+
+  it('keeps an announced, focused cancellation result after refresh removes the booking actions', async () => {
+    cancelBookingMock.mockResolvedValueOnce({ ok: true })
+    let removeBooking: (() => void) | undefined
+    let refreshRequested = false
+    refreshMock.mockImplementationOnce(() => { refreshRequested = true })
+    function Harness() {
+      const [visible, setVisible] = useState(true)
+      removeBooking = () => setVisible(false)
+      return (
+        <ClientBusinessShell business={{ name: 'Mimos', logoUrl: null, brandColor: null, visualStyle: 'balanced', category: 'nails' }} bookingHref="/book/mimos">
+          {visible && <BookingActions bookingId="b1" slug="mimos" serviceName="Manicure" startsAtLabel="lunes 14 de septiembre, 10:00" canManage cutoffHours={24} rescheduleBlockedReason={null} />}
+        </ClientBusinessShell>
+      )
+    }
+
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const root = createRoot(host)
+    await act(async () => root.render(<Harness />))
+    const trigger = Array.from(host.querySelectorAll('button')).find((button) => button.textContent === 'Cancelar reserva')!
+    await act(async () => trigger.click())
+    const confirm = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Cancelar reserva' && button !== trigger)!
+    await act(async () => {
+      confirm.click()
+      await Promise.resolve()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(cancelBookingMock).toHaveBeenCalledWith('b1')
+    expect(refreshRequested).toBe(true)
+    const notice = host.querySelector('[role="status"]')
+    expect(notice?.textContent).toContain('Reserva cancelada')
+    expect(document.activeElement).toBe(notice)
+
+    await act(async () => removeBooking?.())
+    expect(host.textContent).not.toContain('Reprogramar')
+    expect(notice?.textContent).toContain('Manicure')
+    expect(notice?.textContent).toContain('lunes 14 de septiembre, 10:00')
+    expect(document.activeElement).toBe(notice)
 
     await act(async () => root.unmount())
     host.remove()

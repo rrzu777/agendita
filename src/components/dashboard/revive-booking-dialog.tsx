@@ -69,7 +69,7 @@ export function ReviveBookingDialog({
             {isPending ? 'Procesando...' : 'Confirmar reserva'}
           </Button>
           <p className="text-xs text-muted-foreground">
-            Queda confirmada con el saldo pendiente que tenga; el pago lo registrás después.
+            Queda confirmada con el saldo pendiente que tenga; el pago lo registras después.
           </p>
 
           <Button

@@ -203,7 +203,7 @@ export function BankTransferForm({
       </div>
 
       <FormField id="bt-instructions" label={<>Instrucciones para {vocabulary.theClient}</>} optional>
-        {(a11y) => <Textarea id="bt-instructions" className="resize-none" density="form" value={form.instructions} onChange={e => set('instructions', e.target.value)} rows={2} placeholder="Ej: poné tu nombre y la fecha de la reserva en el asunto" {...a11y} />}
+        {(a11y) => <Textarea id="bt-instructions" className="resize-none" density="form" value={form.instructions} onChange={e => set('instructions', e.target.value)} rows={2} placeholder="Ej: pon tu nombre y la fecha de la reserva en el asunto" {...a11y} />}
       </FormField>
 
       <div className="grid gap-4 sm:grid-cols-2">

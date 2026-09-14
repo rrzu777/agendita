@@ -1,6 +1,6 @@
 'use client'
 
-import { useSyncExternalStore } from 'react'
+import { createContext, useCallback, useContext, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import Link from 'next/link'
 import type { BusinessCategory, BusinessVisualStyle } from '@prisma/client'
 import { ArrowLeft, CalendarPlus, ChevronDown } from 'lucide-react'
@@ -12,6 +12,13 @@ type ClientBusinessIdentity = {
   brandColor: string | null
   visualStyle: BusinessVisualStyle
   category: BusinessCategory
+}
+
+type CancellationNotice = { serviceName: string; startsAtLabel: string }
+const ClientBookingNoticeContext = createContext<((notice: CancellationNotice) => void) | null>(null)
+
+export function useClientBookingNotice() {
+  return useContext(ClientBookingNoticeContext)
 }
 
 export function ClientAccountShell({
@@ -81,8 +88,16 @@ export function ClientBusinessShell({
   sectionBaseHref?: string
   children: React.ReactNode
 }) {
+  const [cancellationNotice, setCancellationNotice] = useState<CancellationNotice | null>(null)
+  const noticeRef = useRef<HTMLParagraphElement>(null)
+  const announceCancellation = useCallback((notice: CancellationNotice) => setCancellationNotice(notice), [])
+  useEffect(() => {
+    if (cancellationNotice) noticeRef.current?.focus()
+  }, [cancellationNotice])
+
   return (
     <BusinessTheme business={business}>
+      <ClientBookingNoticeContext.Provider value={announceCancellation}>
       <div className="relative min-h-[calc(100vh-4rem)] bg-background pb-24 text-foreground">
         <header className="sticky top-0 z-30 border-b border-border/70 bg-background">
           <div className="mx-auto flex min-h-16 w-full max-w-5xl items-center gap-3 px-4 sm:px-6">
@@ -111,7 +126,10 @@ export function ClientBusinessShell({
           </div>
           <ClientSectionNav businessName={business.name} sectionBaseHref={sectionBaseHref} />
         </header>
-        <div className="mx-auto w-full max-w-5xl px-4 py-7 sm:px-6 sm:py-10">{children}</div>
+        <div className="mx-auto w-full max-w-5xl px-4 py-7 sm:px-6 sm:py-10">
+          {cancellationNotice && <p ref={noticeRef} role="status" tabIndex={-1} className="mb-5 rounded-xl border border-success/40 bg-success/10 px-4 py-3 text-sm font-medium text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring">Reserva cancelada: {cancellationNotice.serviceName} del {cancellationNotice.startsAtLabel}.</p>}
+          {children}
+        </div>
         <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border/70 bg-background p-3 pb-[max(.75rem,env(safe-area-inset-bottom))] sm:inset-x-auto sm:right-6 sm:bottom-6 sm:w-auto sm:border-0 sm:bg-transparent sm:p-0">
           <Link href={bookingHref} className="flex min-h-12 items-center justify-center gap-2 rounded-xl bg-primary px-5 font-semibold text-primary-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
             <CalendarPlus className="size-5" aria-hidden="true" />
@@ -119,6 +137,7 @@ export function ClientBusinessShell({
           </Link>
         </div>
       </div>
+      </ClientBookingNoticeContext.Provider>
     </BusinessTheme>
   )
 }

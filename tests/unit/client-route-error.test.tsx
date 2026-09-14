@@ -11,10 +11,17 @@ describe('ClientRouteError', () => {
     const html = renderToStaticMarkup(<ClientRouteError area="benefits" error={new Error('database secret')} retry={vi.fn()} />)
     expect(html).toContain('No pudimos cargar esta página')
     expect(html).toContain('Intentar de nuevo')
-    expect(html).toContain('Volver a mi cuenta')
+    expect(html).toContain('Volver al inicio')
     expect(html).not.toContain('database secret')
     expect(html).toContain('Tus beneficios')
+    expect(html).toContain('href="/"')
+    expect(html).not.toContain('href="/mi"')
+  })
+
+  it('reserves account recovery for the account boundary', () => {
+    const html = renderToStaticMarkup(<ClientRouteError area="account" error={new Error('boom')} retry={vi.fn()} />)
     expect(html).toContain('Volver a mi cuenta')
+    expect(html).toContain('href="/mi"')
   })
 
   it('forwards the stable Next 16 retry prop from every route boundary', () => {

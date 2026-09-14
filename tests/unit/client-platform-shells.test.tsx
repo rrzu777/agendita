@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { ClientAccountShell, ClientBusinessShell, TenantPublicShell } from '@/components/client/client-shell'
 import { AuthShell, LegalShell, MarketingShell } from '@/components/platform/platform-shell'
 import { PackagesBusinessPage } from '@/components/packages/packages-business-page'
+import { ClientRouteLoading } from '@/components/client/client-route-loading'
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }))
 vi.mock('@/server/actions/packages-checkout', () => ({ createPackagePurchase: vi.fn(), initiatePackagePayment: vi.fn(), declarePackageTransfer: vi.fn() }))
@@ -103,6 +104,23 @@ describe('client account shells', () => {
     await act(async () => root.unmount())
     host.remove()
     window.history.replaceState(null, '', window.location.pathname)
+  })
+})
+
+describe('client route loading geometry', () => {
+  it('matches catalog, benefit card and narrow review form shapes', () => {
+    const packages = renderToStaticMarkup(<ClientRouteLoading area="packages" />)
+    const benefits = renderToStaticMarkup(<ClientRouteLoading area="benefits" />)
+    const review = renderToStaticMarkup(<ClientRouteLoading area="review" />)
+
+    expect(packages).toContain('data-loading-layout="catalog"')
+    expect((packages.match(/data-loading-card=/g) ?? [])).toHaveLength(2)
+    expect(benefits).toContain('data-loading-layout="benefit-card"')
+    expect((benefits.match(/data-loading-card=/g) ?? [])).toHaveLength(1)
+    expect(review).toContain('data-loading-layout="review-form"')
+    expect(review).toContain('data-loading-rating')
+    expect(review).toContain('data-loading-textarea')
+    expect(review).toContain('max-w-xl')
   })
 })
 
