@@ -30,7 +30,7 @@ export function PackageTransferInstructions({
     <div className="space-y-4">
       <div className="rounded-2xl bg-muted/55 p-5">
         <p className="mb-3 text-sm text-muted-foreground">
-          Transferí <span className="font-semibold text-primary">{formatMoney(amount, currency)}</span> a esta cuenta:
+          Transfiere <span className="font-semibold text-primary">{formatMoney(amount, currency)}</span> a esta cuenta:
         </p>
         <div className="space-y-2 text-sm">
           {rows.map(([label, value]) => (

@@ -4,10 +4,16 @@ import { renderToStaticMarkup } from 'react-dom/server'
 const mocks = vi.hoisted(() => ({ publicBusiness: vi.fn(), bookingBusiness: vi.fn(), subdomainBusiness: vi.fn(), tenant: vi.fn() }))
 vi.mock('@/lib/business/public', () => ({
   getPublicBusinessBySlug: mocks.publicBusiness,
+  getPublicBusinessBySubdomain: mocks.subdomainBusiness,
   getBookingBusinessBySlug: mocks.bookingBusiness,
   getBookingBusinessBySubdomain: mocks.subdomainBusiness,
 }))
 vi.mock('@/lib/tenant/resolver', () => ({ getTenantFromRequest: mocks.tenant }))
+vi.mock('next/font/google', () => ({
+  Geist: () => ({ variable: '--font-geist-sans' }),
+  Geist_Mono: () => ({ variable: '--font-geist-mono' }),
+  Plus_Jakarta_Sans: () => ({ variable: '--font-jakarta' }),
+}))
 
 describe('tenant theme route layouts', () => {
   const tenant = { category: 'barber', brandColor: '#35524A', visualStyle: 'contrast' }
@@ -22,10 +28,12 @@ describe('tenant theme route layouts', () => {
     const { generateViewport: profileViewport } = await import('@/app/b/[slug]/layout')
     const { generateViewport: aliasViewport } = await import('@/app/book/[slug]/layout')
     const { generateViewport: canonicalViewport } = await import('@/app/book/layout')
+    const { generateViewport: rootViewport } = await import('@/app/page')
 
     await expect(profileViewport({ params: Promise.resolve({ slug: 'barber' }) })).resolves.toEqual({ themeColor: '#35524A' })
     await expect(aliasViewport({ params: Promise.resolve({ slug: 'barber' }) })).resolves.toEqual({ themeColor: '#B64D68' })
     await expect(canonicalViewport()).resolves.toEqual({ themeColor: '#4F5D54' })
+    await expect(rootViewport()).resolves.toMatchObject({ themeColor: '#4F5D54' })
   })
 
   it('mantiene el tema del perfil mientras carga o falla la ruta dinámica', async () => {

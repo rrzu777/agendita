@@ -6,8 +6,9 @@ import { ensureUserRow, AccountConflictError } from '@/lib/auth/ensure-user-row'
 import { linkCustomerByLoyaltyToken, CardLinkError } from '@/lib/customers/link'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { PageMessage } from '@/components/ui/page-message'
+import { AuthShell } from '@/components/platform/platform-shell'
 
-export const metadata: Metadata = { robots: { index: false, follow: false } }
+export const metadata: Metadata = { title: 'Vincular tarjeta', robots: { index: false, follow: false } }
 
 export default async function VincularPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params
@@ -16,7 +17,7 @@ export default async function VincularPage({ params }: { params: Promise<{ token
 
   const limit = await checkRateLimit('card-link', 10, 60000, { userId: user.id })
   if (!limit.success) {
-    return <PageMessage title="No pudimos vincular tu tarjeta" message="Demasiados intentos. Espera un momento y vuelve a intentar." />
+    return <AuthShell audience="client"><PageMessage title="No pudimos vincular tu tarjeta" message="Demasiados intentos. Espera un momento y vuelve a intentar." /></AuthShell>
   }
 
   let slug: string
@@ -25,7 +26,7 @@ export default async function VincularPage({ params }: { params: Promise<{ token
     slug = await linkCustomerByLoyaltyToken(prisma, user.id, token)
   } catch (e) {
     if (e instanceof AccountConflictError || e instanceof CardLinkError) {
-      return <PageMessage title="No pudimos vincular tu tarjeta" message={e.message} />
+      return <AuthShell audience="client"><PageMessage title="No pudimos vincular tu tarjeta" message={e.message} /></AuthShell>
     }
     throw e
   }

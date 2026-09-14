@@ -70,6 +70,19 @@ test.describe('settings navigation', () => {
     setOwnerAuth(page)
   })
 
+  test('mobile more menu starts at its heading and restores the opener on Escape', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.goto('/dashboard/settings/profile')
+    const opener = page.getByRole('button', { name: 'Más opciones', exact: true })
+    await opener.click()
+    const menu = page.getByRole('dialog', { name: 'Más opciones' })
+    await expect(menu.getByRole('heading', { name: 'Más opciones' })).toBeFocused()
+    await expect(menu.getByRole('button', { name: 'Cerrar sesión' })).not.toBeFocused()
+    await page.keyboard.press('Escape')
+    await expect(menu).not.toBeVisible()
+    await expect(opener).toBeFocused()
+  })
+
   for (const viewport of VIEWPORTS) {
     test(`navigates through every section at ${viewport.width}px`, async ({ page }) => {
       test.setTimeout(60_000)

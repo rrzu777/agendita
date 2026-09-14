@@ -29,7 +29,7 @@ export async function setMarketingOptOutByToken(token: string, optedOut: boolean
   if (typeof optedOut !== 'boolean') throw new Error('Datos inválidos')
   const customer = await resolveLoyaltyCustomer(prisma, token)
   if (!customer) throw new ForbiddenError('Tarjeta no disponible')
-  await applyOptOut(customer, optedOut, [`/tarjeta/${token}`])
+  await applyOptOut(customer, optedOut, [`/tarjeta/${token}`, `/baja/${token}`])
 }
 
 /** Baja/re-alta autogestionada desde /mi (sesión). Ownership: el Customer debe

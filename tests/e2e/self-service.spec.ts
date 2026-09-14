@@ -19,8 +19,9 @@ import { toLocalDateStr } from './helpers/dates'
 //      acciones self-service (selfServiceCutoffHours=24 por defecto, la
 //      reserva está a >48h → BookingActions debe mostrar "Reprogramar" y
 //      "Cancelar reserva").
-//   3. Cancelar (confirmación inline "Sí, cancelar") → la fila desaparece de
-//      "Próximas reservas", sin error inline. Que el estado quede en 'cancelled'
+//   3. Cancelar desde el AlertDialog contextual → la fila desaparece de
+//      "Próximas reservas", sin error en el diálogo y con resultado persistente.
+//      Que el estado quede en 'cancelled'
 //      lo verifica contra la DB tests/integration/self-service-bookings.test.ts;
 //      acá no se mira "Historial" (ver el porqué al final del test).
 //
@@ -213,19 +214,27 @@ test.describe('self-service (/mi): cancelación', () => {
     await expect(bookingRow.getByRole('link', { name: 'Reprogramar' })).toBeVisible()
     await expect(bookingRow.getByRole('button', { name: 'Cancelar reserva' })).toBeVisible()
 
-    // 4. Cancelar con confirmación inline.
+    const serviceName = (await bookingRow.locator(':scope > div').first().textContent())?.trim()
+    expect(serviceName).toBeTruthy()
+
+    // 4. Cancelar desde el diálogo contextual, cuyo foco seguro evita confirmar
+    //    por accidente al abrirlo con teclado.
     await bookingRow.getByRole('button', { name: 'Cancelar reserva' }).click()
-    await bookingRow.getByRole('button', { name: 'Sí, cancelar' }).click()
+    const cancelDialog = page.getByRole('alertdialog')
+    await expect(cancelDialog).toContainText(serviceName!)
+    await expect(cancelDialog).toContainText(dateLabel)
+    await expect(cancelDialog.getByRole('button', { name: 'Conservar reserva' })).toBeFocused()
+    await cancelDialog.getByRole('button', { name: 'Cancelar reserva' }).click()
 
     // 5. Esperar el desenlace: o la fila se va de "Próximas reservas", o la action
-    //    rechazó y booking-actions.tsx pinta el motivo en un span rojo DENTRO de la
-    //    fila (rate limit, cutoff, ownership).
+    //    rechazó y booking-actions.tsx pinta el motivo con role=alert dentro del
+    //    diálogo (rate limit, cutoff, ownership).
     //
     //    Va en UN solo poll y no en dos aserciones sueltas a propósito: un
     //    `expect(error).toHaveCount(0)` se cumple mientras el error TODAVÍA no
     //    apareció, así que pasaría en t=0 —antes de que la action conteste— y no
     //    cazaría nada. Así el rojo trae el motivo en vez de un conteo mudo.
-    const errorInline = bookingRow.locator('span.text-red-600')
+    const dialogError = cancelDialog.getByRole('alert')
     const FILA_FUERA = 'la fila salió de Próximas reservas'
 
     await expect
@@ -234,14 +243,19 @@ test.describe('self-service (/mi): cancelación', () => {
           // `count()` primero porque es inmediato: `textContent()` sobre un locator
           // sin match ESPERA el timeout de acción y después tira, y eso se comería el
           // presupuesto del poll en dos o tres iteraciones.
-          if ((await errorInline.count()) > 0) {
-            return `la action rechazó: ${await errorInline.first().textContent()}`
+          if ((await dialogError.count()) > 0) {
+            return `la action rechazó: ${await dialogError.first().textContent()}`
           }
           return (await bookingRow.count()) === 0 ? FILA_FUERA : 'la fila sigue en Próximas reservas'
         },
         { timeout: 15_000 },
       )
       .toBe(FILA_FUERA)
+
+    const cancellationNotice = page.getByRole('status').filter({ hasText: 'Reserva cancelada' })
+    await expect(cancellationNotice).toContainText(serviceName!)
+    await expect(cancellationNotice).toContainText(dateLabel)
+    await expect(cancellationNotice).toBeFocused()
 
     // NO se chequea que reaparezca en "Historial": esa lista es `take: 20` ordenada
     // por startDateTime desc (mi/[slug]/page.tsx), y las canceladas de corridas
@@ -367,7 +381,7 @@ test.describe('self-service: recordatorios push', () => {
 
     await gotoStable(page, '/notificaciones')
 
-    await expect(page.getByText(/iniciá sesión/)).toBeVisible()
+    await expect(page.getByText('Para activar recordatorios, inicia sesión o vuelve desde la confirmación de una reserva elegible.')).toBeVisible()
     await expect(page.getByRole('link', { name: 'Iniciar sesión' })).toHaveAttribute(
       'href',
       '/ingresar?next=/notificaciones',
@@ -476,7 +490,7 @@ test.describe('self-service: recordatorios push', () => {
     ])
 
     await page.getByRole('button', { name: 'Desactivar recordatorios' }).click()
-    await expect(page.getByText(/iniciá sesión/)).toBeVisible()
+    await expect(page.getByText('Para activar recordatorios, inicia sesión o vuelve desde la confirmación de una reserva elegible.')).toBeVisible()
 
     const afterDeactivate = await page.evaluate(() => (
       window as unknown as { __pushReloadE2E: { unsubscribeCalls: number } }

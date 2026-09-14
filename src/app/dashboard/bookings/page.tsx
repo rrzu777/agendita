@@ -429,7 +429,7 @@ export default async function BookingsPage({
         ) : bookings.length === 0 ? (
           <div className="studio-card shadow-none p-8 text-center">
             <h3 className="text-lg font-semibold text-foreground">Esta página ya no está disponible</h3>
-            <p className="mt-2 text-sm text-muted-foreground">Volvé al inicio de Reservas para cargar el historial actual.</p>
+            <p className="mt-2 text-sm text-muted-foreground">Vuelve al inicio de Reservas para cargar el historial actual.</p>
             <Button className="mt-5" variant="outline" asChild>
               <Link href="/dashboard/bookings">Ir al inicio</Link>
             </Button>

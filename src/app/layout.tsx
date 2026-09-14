@@ -20,8 +20,11 @@ const jakarta = Plus_Jakarta_Sans({
 })
 
 export const metadata: Metadata = {
-  title: "Agendita - Agenda online para estudios de belleza",
-  description: "Recibe reservas con abono y controla tus pagos desde un solo lugar.",
+  title: {
+    default: "Agendita — Agenda para negocios de servicios",
+    template: "%s — Agendita",
+  },
+  description: "Organiza servicios, profesionales, horarios, cobros y reservas desde un solo lugar.",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
@@ -46,7 +49,7 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="es" className={`${geistSans.variable} ${geistMono.variable} ${jakarta.variable}`}>
+    <html lang="es-CL" className={`${geistSans.variable} ${geistMono.variable} ${jakarta.variable}`}>
       <body className="antialiased">
         {children}
       </body>

@@ -22,13 +22,18 @@ export function PackageTransferPanel({ transferInfo, amount, currency, purchaseI
   async function handleDeclare() {
     setDeclaring(true)
     setError(null)
-    const res = await declarePackageTransfer({ purchaseId })
-    if (!res.ok) {
-      setError(res.error)
+    try {
+      const res = await declarePackageTransfer({ purchaseId })
+      if (!res.ok) {
+        setError(res.error)
+        return
+      }
+      router.refresh()
+    } catch {
+      setError('No pudimos registrar la transferencia. Intenta nuevamente.')
+    } finally {
       setDeclaring(false)
-      return
     }
-    router.refresh()
   }
 
   return (
@@ -40,7 +45,7 @@ export function PackageTransferPanel({ transferInfo, amount, currency, purchaseI
         declaring={declaring}
         onDeclare={handleDeclare}
       />
-      {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
+      {error && <p role="alert" className="mt-2 text-sm text-destructive">{error}</p>}
     </div>
   )
 }

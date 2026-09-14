@@ -102,7 +102,7 @@ test.describe('auth - login', () => {
   test('login with invalid credentials → should show error', async ({ page }) => {
     await page.goto('/login')
     await page.getByLabel('Email').fill('nonexistent@example.com')
-    await page.getByLabel('Contraseña').fill('wrongpassword')
+    await page.getByLabel(/^Contraseña\s*\*?$/).fill('wrongpassword')
     await page.getByRole('button', { name: /iniciar sesión/i }).click()
     // Error may show inline or stay on /login
     await expect(page.locator('[class*="destructive"], [class*="error"]').first()).toBeVisible({ timeout: 5_000 }).catch(() => {

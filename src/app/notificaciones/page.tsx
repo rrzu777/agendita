@@ -5,10 +5,12 @@ import { getCurrentUser } from '@/lib/auth/user'
 import { hasUsablePushConfig } from '@/lib/push/config'
 import { findEligiblePushCustomers } from '@/lib/push/eligibility'
 import { prisma } from '@/lib/db'
+import { AuthShell } from '@/components/platform/platform-shell'
 
 export const metadata: Metadata = {
-  title: 'Recordatorios | Agendita',
-  description: 'Activá recordatorios para tus próximas citas.',
+  title: 'Recordatorios',
+  description: 'Activa recordatorios para tus próximas citas.',
+  robots: { index: false, follow: false },
 }
 
 export default async function NotificationsPage() {
@@ -17,7 +19,7 @@ export default async function NotificationsPage() {
     && (await findEligiblePushCustomers(prisma, user.id, new Date())).length > 0
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-lg items-center px-6 py-12">
+    <AuthShell audience="client"><main className="mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-lg items-center py-8">
       <section className="w-full space-y-6 rounded-2xl border bg-card p-6 shadow-sm">
         <div className="space-y-2">
           <p className="text-sm font-medium text-primary">Agendita</p>
@@ -35,6 +37,6 @@ export default async function NotificationsPage() {
           canActivateAccount={canActivateAccount}
         />
       </section>
-    </main>
+    </main></AuthShell>
   )
 }

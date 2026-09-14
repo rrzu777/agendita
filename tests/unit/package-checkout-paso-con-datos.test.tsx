@@ -35,6 +35,36 @@ const transferInfo = {
  * pantalla vacía sino el formulario de una compra que ya existe.
  */
 describe('PackageCheckout — el paso se lleva sus datos', () => {
+  it('usa submit semántico y asocia el error sólo al campo culpable', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    await act(async () => root.render(
+      <PackageCheckout product={product} currency="CLP" prefill={{ ...prefill, name: '' }} onCancel={() => {}} transferInfo={null} />,
+    ))
+
+    const form = container.querySelector<HTMLFormElement>('form')!
+    expect(form).not.toBeNull()
+    expect(form.noValidate).toBe(true)
+    expect(container.querySelector<HTMLButtonElement>('button[type="submit"]')).not.toBeNull()
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await act(async () => Promise.resolve())
+
+    const name = container.querySelector<HTMLInputElement>('#package-customer-name')!
+    const phone = container.querySelector<HTMLInputElement>('#package-customer-phone')!
+    expect(name.getAttribute('aria-invalid')).toBe('true')
+    expect(name.getAttribute('aria-describedby')).toBe('package-checkout-error')
+    expect(phone.getAttribute('aria-invalid')).not.toBe('true')
+    expect(phone.getAttribute('aria-describedby')).toBeNull()
+
+    const terms = container.querySelector<HTMLInputElement>('#package-accepted-terms')!
+    expect(terms.required).toBe(true)
+    expect(terms.getAttribute('aria-required')).toBe('true')
+
+    await act(async () => root.unmount())
+    container.remove()
+  })
+
   it('elegir transferencia lleva a las instrucciones, no de vuelta al formulario', async () => {
     mockCreatePurchase.mockResolvedValue({ ok: true, data: { purchaseId: 'pp-1' } })
     const container = document.createElement('div')
@@ -68,6 +98,43 @@ describe('PackageCheckout — el paso se lleva sus datos', () => {
     expect(container.textContent).toContain('Ya transferí')
     // Y NO el formulario, que crearía una segunda compra por la misma plata.
     expect(container.textContent).not.toContain('Acepto los términos')
+
+    await act(async () => root.unmount())
+    container.remove()
+  })
+
+  it('recupera el formulario si la creación falla por red', async () => {
+    mockCreatePurchase.mockRejectedValueOnce(new Error('network'))
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    await act(async () => root.render(
+      <PackageCheckout product={product} currency="CLP" prefill={prefill} onCancel={() => {}} transferInfo={null} />,
+    ))
+    await act(async () => container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click())
+    await clickButton(container, 'Pagar', { match: 'contains' })
+
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('Intenta nuevamente')
+    expect(container.textContent).toContain('Acepto los términos')
+    expect(container.querySelector<HTMLButtonElement>('button:last-child')?.disabled).toBe(false)
+
+    await act(async () => root.unmount())
+    container.remove()
+  })
+
+  it('ofrece solo transferencia cuando Mercado Pago no está disponible', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    await act(async () => root.render(
+      <PackageCheckout product={product} currency="CLP" prefill={prefill} onCancel={() => {}} transferInfo={transferInfo} onlineAvailable={false} />,
+    ))
+    await act(async () => container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click())
+    await clickButton(container, 'Continuar')
+
+    expect(container.textContent).toContain('Transferencia bancaria')
+    expect(container.textContent).not.toContain('Pagar con Mercado Pago')
 
     await act(async () => root.unmount())
     container.remove()

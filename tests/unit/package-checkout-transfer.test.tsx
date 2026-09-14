@@ -29,6 +29,13 @@ describe('PackageCheckout — método transferencia', () => {
       <PackageCheckout product={product} currency="CLP" prefill={prefill} onCancel={() => {}} transferInfo={transferInfo} />,
     )
     expect(html).toContain('Continuar')
+    const host = document.createElement('div')
+    host.innerHTML = html
+    expect(host.querySelector('label[for="package-customer-name"]')?.textContent).toContain('Nombre (requerido)')
+    expect(host.querySelector('label[for="package-customer-phone"]')?.textContent).toContain('Teléfono (requerido)')
+    expect(host.querySelector('label[for="package-customer-email"]')?.textContent).toContain('Email (solo lectura)')
+    expect(html).toContain('id="package-customer-name"')
+    expect(html).not.toContain('studio-card')
   })
 
   it('la vista de instrucciones muestra datos bancarios y Ya transferí', () => {

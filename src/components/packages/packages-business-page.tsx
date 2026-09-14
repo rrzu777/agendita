@@ -1,9 +1,8 @@
-import Link from 'next/link'
-import { ArrowLeft } from 'lucide-react'
 import { PackageCatalog } from './package-catalog'
 import type { PackagesBusiness } from '@/lib/business/public'
 import type { PackageCheckoutPrefill } from '@/server/actions/packages-checkout'
 import type { BankTransferPublicInfo } from '@/lib/bank-transfer/public-info'
+import { TenantPublicShell } from '@/components/client/client-shell'
 
 interface PackagesBusinessPageProps {
   business: PackagesBusiness
@@ -17,22 +16,12 @@ interface PackagesBusinessPageProps {
 
 export function PackagesBusinessPage({ business, profileHref, onlineAvailable, onlineReason, prefill, preselectedProductId, transferInfo }: PackagesBusinessPageProps) {
   return (
-    <main className="studio-shell">
-      <header className="sticky top-0 z-40 border-b border-border/50 bg-background/85 backdrop-blur">
-        <div className="mx-auto flex h-16 max-w-2xl items-center justify-between px-4">
-          <Link href={profileHref} className="flex size-10 items-center justify-center rounded-full text-primary transition-colors hover:bg-muted" aria-label="Volver al perfil">
-            <ArrowLeft className="size-6" />
-          </Link>
-          <div className="text-center">
-            <h1 className="font-heading text-xl font-semibold tracking-tight text-primary">Paquetes</h1>
-            <p className="text-sm text-muted-foreground">{business.name}</p>
-          </div>
-          <div className="flex size-10 items-center justify-center rounded-full bg-secondary text-sm font-semibold text-primary">
-            {business.name.slice(0, 1).toUpperCase()}
-          </div>
-        </div>
-      </header>
-      <div className="mx-auto max-w-2xl px-4 py-8">
+    <TenantPublicShell business={business} backHref={profileHref} backLabel="Volver al perfil">
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Compra anticipada</p>
+        <h1 className="mt-2 font-heading text-3xl font-semibold tracking-tight text-primary">Paquetes</h1>
+        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">Elige el paquete que mejor te sirve. Antes de pagar verás las sesiones, vigencia y métodos disponibles.</p>
+        <div className="mt-7">
         <PackageCatalog
           slug={business.slug}
           currency={business.currency || 'CLP'}
@@ -54,6 +43,7 @@ export function PackagesBusinessPage({ business, profileHref, onlineAvailable, o
           transferInfo={transferInfo}
         />
       </div>
-    </main>
+      </div>
+    </TenantPublicShell>
   )
 }

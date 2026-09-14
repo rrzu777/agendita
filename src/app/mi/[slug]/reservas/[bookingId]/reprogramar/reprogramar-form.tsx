@@ -38,6 +38,11 @@ export function ReprogramarForm({
   const [selectedSlot, setSelectedSlot] = useState<{ start: Date; end: Date } | null>(null)
   const ignoreRef = useRef(false)
   const requestIdRef = useRef(0)
+  const successHeadingRef = useRef<HTMLHeadingElement>(null)
+
+  useEffect(() => {
+    if (success) successHeadingRef.current?.focus()
+  }, [success])
 
   /* eslint-disable react-hooks/set-state-in-effect -- standard loading/reset-before-fetch;
      concurrent responses are de-duped via requestIdRef/ignoreRef below. */
@@ -108,12 +113,13 @@ export function ReprogramarForm({
     return (
       <Card>
         <CardContent className="p-10 text-center">
-          <CalendarCheck2 className="mx-auto mb-3 size-10 text-green-600" />
-          <h3 className="text-xl font-semibold text-primary">Reserva reprogramada</h3>
+          <CalendarCheck2 className="mx-auto mb-3 size-10 text-success" />
+          <h2 ref={successHeadingRef} tabIndex={-1} className="text-xl font-semibold text-primary focus:outline-none">Reserva reprogramada</h2>
           <p className="mt-1 text-muted-foreground">Se avisará por email si tienes correo registrado.</p>
           <div className="mt-5 flex justify-center">
             <Button
               type="button"
+              size="touch"
               onClick={() => {
                 router.push(`/mi/${slug}`)
                 router.refresh()
@@ -132,9 +138,9 @@ export function ReprogramarForm({
   return (
     <Card>
       <CardContent className="p-6 md:p-8">
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleSubmit} noValidate className="space-y-6">
           {error && (
-            <div className="rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
+            <div role="alert" className="rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
               {error}
             </div>
           )}
@@ -147,12 +153,12 @@ export function ReprogramarForm({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="date">Nueva fecha *</Label>
-            <Input id="date" name="date" type="date" required min={today} value={date} onChange={(e) => setDate(e.target.value)} className="h-10" />
+            <Label htmlFor="date">Nueva fecha <span className="text-muted-foreground">(requerida)</span></Label>
+            <Input id="date" name="date" type="date" required aria-required="true" min={today} value={date} onChange={(e) => setDate(e.target.value)} density="touch" />
           </div>
 
           <div className="space-y-3">
-            <Label>Horarios disponibles *</Label>
+            <Label>Horario <span className="text-muted-foreground">(requerido)</span></Label>
             {loadingSlots ? (
               <div className="flex items-center gap-2 rounded-lg border border-border/60 bg-muted/30 p-4 text-sm text-muted-foreground">
                 <Loader2 className="size-4 animate-spin" />
@@ -172,7 +178,7 @@ export function ReprogramarForm({
                       key={start.toISOString()}
                       type="button"
                       onClick={() => setSelectedSlot(slot)}
-                      className={`rounded-xl border p-3 text-center transition ${
+                      className={`min-h-12 rounded-xl border p-3 text-center transition ${
                         selected
                           ? 'border-primary bg-primary text-primary-foreground'
                           : 'border-border bg-card text-primary hover:border-primary hover:bg-accent'
@@ -201,10 +207,10 @@ export function ReprogramarForm({
           )}
 
           <div className="flex gap-3">
-            <Button type="button" variant="outline" onClick={() => router.back()} disabled={loading}>
+            <Button type="button" variant="outline" size="touch" onClick={() => router.back()} disabled={loading}>
               Cancelar
             </Button>
-            <Button type="submit" disabled={loading || loadingSlots || !selectedSlot} className="flex-1">
+            <Button type="submit" size="touch" disabled={loading || loadingSlots || !selectedSlot} className="flex-1">
               {loading ? 'Reprogramando...' : 'Reprogramar reserva'}
             </Button>
           </div>

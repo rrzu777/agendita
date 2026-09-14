@@ -1,6 +1,7 @@
+import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 
-const business = vi.hoisted(() => ({ id: 'biz-a', slug: 'salon', subdomain: 'salon' }))
+const business = vi.hoisted(() => ({ id: 'biz-a', slug: 'salon', subdomain: 'salon', name: 'Salón Aurora' }))
 const tenant = vi.hoisted(() => vi.fn().mockResolvedValue(null))
 vi.mock('@/lib/business/public', () => ({ getPublicBusinessBySlug: async () => business, getPublicBusinessBySubdomain: async () => business }))
 vi.mock('@/lib/tenant/resolver', () => ({ getTenantFromRequest: tenant }))
@@ -8,7 +9,7 @@ vi.mock('@/lib/db', () => ({ prisma: { packageProduct: { count: async () => 0 },
 vi.mock('@/lib/auth/user', () => ({ getCurrentUser: async () => null }))
 vi.mock('next/navigation', () => ({ notFound: () => { throw new Error('404') }, redirect: (path: string) => { throw new Error(`redirect:${path}`) } }))
 import ProfilePage from '@/app/b/[slug]/page'
-import HomePage from '@/app/page'
+import HomePage, { generateMetadata } from '@/app/page'
 
 describe('profile acquisition navigation contracts', () => {
   it('path-based profile carries acquisition and referral in the booking CTA and login alias', async () => {
@@ -22,5 +23,19 @@ describe('profile acquisition navigation contracts', () => {
     tenant.mockResolvedValue({ slug: 'salon', subdomain: 'salon' })
     const page = await HomePage({ searchParams: Promise.resolve({ acq: 'abcdefghijklmnopqrstuv' }) })
     expect(page.props.children.props.bookingHref).toBe('/book?acq=abcdefghijklmnopqrstuv')
+  })
+  it('identifies the tenant in metadata and keeps platform metadata on the apex', async () => {
+    tenant.mockResolvedValueOnce({ slug: 'salon', subdomain: 'salon' })
+    await expect(generateMetadata()).resolves.toMatchObject({ title: 'Salón Aurora', description: expect.stringContaining('Salón Aurora') })
+    tenant.mockResolvedValueOnce(null)
+    await expect(generateMetadata()).resolves.toEqual({})
+  })
+  it('shows a concrete agenda preview on the platform landing without claiming customer data', async () => {
+    tenant.mockResolvedValue(null)
+    const html = renderToStaticMarkup(await HomePage({ searchParams: Promise.resolve({}) }))
+    expect(html).toContain('Así se ve una jornada')
+    expect(html).toContain('Reserva confirmada')
+    expect(html).toContain('Espacio disponible')
+    expect(html).toContain('Vista ilustrativa')
   })
 })

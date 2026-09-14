@@ -383,40 +383,40 @@ export function PushManager({
   if (status === 'disabled') return <p>Los recordatorios push no están disponibles por ahora.</p>
   if (status === 'unsupported') {
     return isIos()
-      ? <p>En iPhone o iPad, primero instalá Agendita en la pantalla de inicio y abrila desde ahí para activar recordatorios.</p>
+      ? <p>En iPhone o iPad, primero instala Agendita en la pantalla de inicio y ábrela desde ahí para activar recordatorios.</p>
       : <p>Este navegador no admite recordatorios push.</p>
   }
   if (status === 'denied') {
-    return <p>El permiso fue rechazado. Podés habilitar las notificaciones desde la configuración del navegador.</p>
+    return <p>El permiso fue rechazado. Puedes habilitar las notificaciones desde la configuración del navegador.</p>
   }
   if (status === 'missing-scope') {
     return (
       <div className="space-y-3">
-        <p>Para activar recordatorios, iniciá sesión o volvé desde la confirmación de una reserva elegible.</p>
-        <Link href="/ingresar?next=/notificaciones" className="font-semibold text-primary underline">
+        <p>Para activar recordatorios, inicia sesión o vuelve desde la confirmación de una reserva elegible.</p>
+        <Link href="/ingresar?next=/notificaciones" className="inline-flex min-h-11 items-center font-semibold text-primary underline">
           Iniciar sesión
         </Link>
       </div>
     )
   }
   if (status === 'no-targets') {
-    return <p>No tenés citas elegibles para activar recordatorios en este momento.</p>
+    return <p>No tienes citas elegibles para activar recordatorios en este momento.</p>
   }
   if (status === 'association-error') {
     return (
       <div className="space-y-3">
-        <p>El navegador creó la suscripción, pero no pudimos completar la activación en el servidor. Desactivala para limpiar el intento antes de volver a probar.</p>
-        <Button type="button" variant="outline" onClick={deactivate}>Desactivar suscripción</Button>
+        <p>El navegador creó la suscripción, pero no pudimos completar la activación en el servidor. Desactívala para limpiar el intento antes de volver a probar.</p>
+        <Button type="button" size="touch" variant="outline" onClick={deactivate}>Desactivar suscripción</Button>
       </div>
     )
   }
   if (status === 'update-required') {
     return (
       <div className="space-y-3">
-        <p>La suscripción de este navegador no está activa en el servidor. Podés actualizarla o eliminarla.</p>
+        <p>La suscripción de este navegador no está activa en el servidor. Puedes actualizarla o eliminarla.</p>
         <div className="flex flex-wrap gap-2">
-          <Button type="button" onClick={activate}>Actualizar recordatorios</Button>
-          <Button type="button" variant="outline" onClick={deactivate}>Desactivar suscripción</Button>
+          <Button type="button" size="touch" onClick={activate}>Actualizar recordatorios</Button>
+          <Button type="button" size="touch" variant="outline" onClick={deactivate}>Desactivar suscripción</Button>
         </div>
       </div>
     )
@@ -425,7 +425,7 @@ export function PushManager({
     return (
       <div className="space-y-3">
         <p>Hay una suscripción en este navegador, pero no está activa con la configuración actual.</p>
-        <Button type="button" variant="outline" onClick={deactivate}>Desactivar suscripción</Button>
+        <Button type="button" size="touch" variant="outline" onClick={deactivate}>Desactivar suscripción</Button>
       </div>
     )
   }
@@ -434,8 +434,8 @@ export function PushManager({
       <div className="space-y-3">
         <p>No pudimos verificar si los recordatorios de este navegador siguen activos.</p>
         <div className="flex flex-wrap gap-2">
-          <Button type="button" onClick={retryVerification}>Reintentar verificación</Button>
-          <Button type="button" variant="outline" onClick={deactivate}>Desactivar suscripción</Button>
+          <Button type="button" size="touch" onClick={retryVerification}>Reintentar verificación</Button>
+          <Button type="button" size="touch" variant="outline" onClick={deactivate}>Desactivar suscripción</Button>
         </div>
       </div>
     )
@@ -444,15 +444,15 @@ export function PushManager({
     return (
       <div className="space-y-3">
         <p>Los recordatorios quedaron desactivados en este navegador, pero no pudimos limpiar el registro del servidor.</p>
-        <Button type="button" variant="outline" onClick={retryCleanup}>Reintentar limpieza</Button>
+        <Button type="button" size="touch" variant="outline" onClick={retryCleanup}>Reintentar limpieza</Button>
       </div>
     )
   }
   if (status === 'error') {
     return (
       <div className="space-y-3">
-        <p>No pudimos cambiar tus recordatorios. Revisá la conexión e intentá de nuevo.</p>
-        <Button type="button" onClick={retryAction === 'deactivate' ? deactivate : activate}>
+        <p>No pudimos cambiar tus recordatorios. Revisa la conexión e intenta de nuevo.</p>
+        <Button type="button" size="touch" onClick={retryAction === 'deactivate' ? deactivate : activate}>
           Reintentar
         </Button>
       </div>
@@ -462,15 +462,15 @@ export function PushManager({
     return (
       <div className="space-y-3">
         <p>Recordatorios activos</p>
-        <Button type="button" variant="outline" onClick={deactivate}>Desactivar recordatorios</Button>
+        <Button type="button" size="touch" variant="outline" onClick={deactivate}>Desactivar recordatorios</Button>
       </div>
     )
   }
 
   return (
     <div className="space-y-3">
-      <p>Activá un aviso antes de que cierre el plazo para cancelar o reprogramar.</p>
-      <Button type="button" disabled={status === 'activating'} onClick={activate}>
+      <p>Activa un aviso antes de que cierre el plazo para cancelar o reprogramar.</p>
+      <Button type="button" size="touch" disabled={status === 'activating'} onClick={activate}>
         {status === 'activating' ? 'Activando…' : 'Activar recordatorios'}
       </Button>
     </div>

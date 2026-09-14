@@ -28,6 +28,7 @@ import MiBusinessPage from '@/app/mi/[slug]/page'
 
 const business = {
   id: 'b1', name: 'Mimos Nails', slug: 'mimosnails', subdomain: 'mimosnails', logoUrl: null, selfServiceCutoffHours: 24,
+  category: 'nails', brandColor: '#B64D68', visualStyle: 'soft',
   cancellationPolicy: null, cancellationReminderEnabled: true,
   loyaltyConfig: { isActive: true, programName: 'Club', pointsLabel: 'mimos', cardMessage: null },
 }
@@ -70,6 +71,11 @@ describe('/mi/[slug]', () => {
     expect(html).toContain('Manicura')
     expect(html).toContain('4738')
     expect(html).toContain('Reservar')
+    expect(html).toContain('Próximas')
+    expect(html).toContain('Historial')
+    expect(html).toContain('Beneficios')
+    expect(html).toContain('Preferencias')
+    expect(html).toContain('data-business-theme')
   })
 
   it('ofrece administrar recordatorios en el origen canónico cuando la clienta tiene una reserva próxima', async () => {

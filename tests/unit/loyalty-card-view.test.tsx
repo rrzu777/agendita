@@ -23,6 +23,9 @@ describe('LoyaltyCard', () => {
     expect(html).toContain('Descuento 10%')
     expect(html).toContain('Canjear')
     expect(html).toContain('Hola, Ana')
+    expect(html).toContain('var(--tenant-brand')
+    expect(html).not.toContain('pink')
+    expect(html).not.toMatch(/(?:gray|amber|green)-/)
   })
 
   it('programa pausado: aviso y sin catálogo', () => {

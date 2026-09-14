@@ -49,6 +49,8 @@ describe('/mi layout', () => {
     expect(mockEnsureUserRow).toHaveBeenCalled()
     expect(mockLink).toHaveBeenCalledWith(expect.anything(), 'u1', 'ana@example.com')
     expect(html).toContain('contenido')
+    expect(html).toContain('data-client-auth-boundary')
+    expect(html).not.toContain('Calendario')
   })
 
   it('NO auto-linkea si el email no está verificado', async () => {
@@ -63,6 +65,8 @@ describe('/mi layout', () => {
     mockEnsureUserRow.mockRejectedValue(new AccountConflictError())
     const html = renderToStaticMarkup(await MiLayout({ children: null }))
     expect(html).toContain('soporte')
+    expect(html).toContain('Mi cuenta')
+    expect(html).toContain('<form')
     expect(mockLink).not.toHaveBeenCalled()
   })
 })

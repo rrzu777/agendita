@@ -203,7 +203,7 @@ export function BankTransferForm({
       </div>
 
       <FormField id="bt-instructions" label={<>Instrucciones para {vocabulary.theClient}</>} optional>
-        {(a11y) => <Textarea id="bt-instructions" className="resize-none" density="form" value={form.instructions} onChange={e => set('instructions', e.target.value)} rows={2} placeholder="Ej: poné tu nombre y la fecha de la reserva en el asunto" {...a11y} />}
+        {(a11y) => <Textarea id="bt-instructions" className="resize-none" density="form" value={form.instructions} onChange={e => set('instructions', e.target.value)} rows={2} placeholder="Ej: pon tu nombre y la fecha de la reserva en el asunto" {...a11y} />}
       </FormField>
 
       <div className="grid gap-4 sm:grid-cols-2">
@@ -223,7 +223,7 @@ export function BankTransferForm({
           error={errors['bt-verify']}
           help={noVerifyLimit
             ? <span className="text-orange-600">Vacío = sin límite: el horario queda retenido hasta que verifiques o rechaces la transferencia.</span>
-            : 'Cuánto tiempo tenés para verificar una transferencia declarada antes de que la reserva expire sola.'}
+            : 'Cuánto tiempo tienes para verificar una transferencia declarada antes de que la reserva expire sola.'}
         >
           {(a11y) => <Input id="bt-verify" density="form" type="number" min={1} max={VERIFY_HOURS_MAX} value={form.verifyHours} onChange={e => set('verifyHours', e.target.value)} placeholder="vacío = sin límite" {...a11y} />}
         </FormField>

@@ -174,7 +174,7 @@ export function AvailabilityEditor({
         </div>
       ) : (
         <div className="rounded-xl border border-border/60 bg-muted/40 p-4 text-sm text-muted-foreground" role="status">
-          Sigue el horario del salón. Si cambiás un día,{' '}
+          Sigue el horario del salón. Si cambias un día,{' '}
           {professionalName ?? 'esta persona'} pasa a tener horario propio y los días que
           no toques quedan como están hoy.
         </div>

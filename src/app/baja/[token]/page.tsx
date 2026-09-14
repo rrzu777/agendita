@@ -4,8 +4,10 @@ import { resolveLoyaltyCustomer } from '@/lib/loyalty/token'
 import { setMarketingOptOutByToken } from '@/server/actions/marketing-optout'
 import { MarketingOptOutSection } from '@/components/loyalty/marketing-optout-section'
 import { PageMessage } from '@/components/ui/page-message'
+import { TenantPublicShell } from '@/components/client/client-shell'
+import { MarketingShell } from '@/components/platform/platform-shell'
 
-export const metadata: Metadata = { robots: { index: false, follow: false } }
+export const metadata: Metadata = { title: 'Preferencias de promociones', robots: { index: false, follow: false } }
 
 // El token es la credencial (mismo criterio que /tarjeta): va bindeado server-side.
 async function optOutAction(token: string, optedOut: boolean) {
@@ -18,12 +20,13 @@ export default async function UnsubscribePage({ params }: { params: Promise<{ to
   const customer = await resolveLoyaltyCustomer(prisma, token)
 
   if (!customer) {
-    return <PageMessage title="Enlace no disponible" message="El enlace no es válido o ya no está activo." />
+    return <MarketingShell><PageMessage title="Enlace no disponible" message="El enlace no es válido o ya no está activo." /></MarketingShell>
   }
 
   return (
-    <main className="mx-auto max-w-md px-4 py-16">
-      <h1 className="text-center font-heading text-xl font-semibold text-primary">
+    <TenantPublicShell business={customer.business} backHref={`/b/${customer.business.slug}`} backLabel="Volver al perfil" width="narrow">
+      <div>
+      <h1 className="text-center font-heading text-2xl font-semibold text-primary">
         Promociones de {customer.business.name}
       </h1>
       <MarketingOptOutSection
@@ -31,6 +34,7 @@ export default async function UnsubscribePage({ params }: { params: Promise<{ to
         optedOut={customer.marketingOptOutAt != null}
         action={optOutAction.bind(null, token)}
       />
-    </main>
+      </div>
+    </TenantPublicShell>
   )
 }

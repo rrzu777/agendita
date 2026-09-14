@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, type FormEvent } from 'react'
+import { useRef, useState, type FormEvent } from 'react'
 import { LogOut, MoreHorizontal } from 'lucide-react'
 import { GuardedLink } from '@/components/dashboard/unsaved-changes-provider'
 import {
@@ -24,6 +24,7 @@ type MobileMoreMenuProps = {
 
 export function MobileMoreMenu({ groups, pathname, onSignOut }: MobileMoreMenuProps) {
   const [open, setOpen] = useState(false)
+  const titleRef = useRef<HTMLHeadingElement>(null)
   const closeForTour = () => {
     setOpen(false)
     return new Promise<void>((resolve) => {
@@ -64,9 +65,11 @@ export function MobileMoreMenu({ groups, pathname, onSignOut }: MobileMoreMenuPr
             <span>Más</span>
           </button>
         </SheetTrigger>
-        <SheetContent data-mobile-more-sheet="" side="bottom" className="max-h-[85dvh] rounded-t-2xl pb-[env(safe-area-inset-bottom)]">
+        <SheetContent data-mobile-more-sheet="" side="bottom" className="max-h-[85dvh] rounded-t-2xl pb-[env(safe-area-inset-bottom)]"
+          onOpenAutoFocus={(event) => { event.preventDefault(); titleRef.current?.focus() }}
+        >
           <SheetHeader>
-            <SheetTitle>Más opciones</SheetTitle>
+            <SheetTitle ref={titleRef} tabIndex={-1}>Más opciones</SheetTitle>
             <SheetDescription>Administra las demás áreas de tu negocio.</SheetDescription>
           </SheetHeader>
           <nav aria-label="Más secciones del dashboard" className="min-h-0 overflow-y-auto px-4 pb-4">

@@ -5,9 +5,10 @@ import { redirect } from 'next/navigation'
 import { BellRing, CalendarCheck2, Smartphone } from 'lucide-react'
 import { InstallAppPanel } from '@/components/pwa/install-app-panel'
 import { getAppUrl } from '@/lib/business/urls'
+import { MarketingShell } from '@/components/platform/platform-shell'
 
 export const metadata: Metadata = {
-  title: 'Instalar Agendita',
+  title: 'Instalar',
   description: 'Instala Agendita para tener tus citas y recordatorios a mano.',
 }
 
@@ -23,19 +24,14 @@ export default async function InstallPage() {
   if (requestHost !== canonicalHost) redirect(canonicalUrl)
 
   return (
-    <main className="studio-shell relative flex min-h-screen items-center overflow-hidden px-4 py-12">
-      <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
-        <div className="absolute -right-32 -top-28 size-80 rounded-full bg-secondary/70 blur-3xl" />
-        <div className="absolute -bottom-36 -left-20 size-72 rounded-full bg-accent/45 blur-3xl" />
-      </div>
-
-      <section className="studio-card mx-auto w-full max-w-md p-6 sm:p-8">
-        <div className="mx-auto flex size-16 items-center justify-center rounded-[1.4rem] bg-primary text-primary-foreground shadow-[0_14px_30px_rgba(51,41,32,0.18)]">
+    <MarketingShell><main className="relative flex min-h-[calc(100vh-4rem)] items-center px-4 py-12">
+      <section className="mx-auto w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-sm sm:p-8">
+        <div className="mx-auto flex size-16 items-center justify-center rounded-[1.4rem] bg-primary text-primary-foreground shadow-sm">
           <Smartphone className="size-8" aria-hidden="true" />
         </div>
 
         <div className="mt-6 text-center">
-          <p className="studio-eyebrow">Agendita en tu teléfono</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Agendita en tu teléfono</p>
           <h1 className="mt-2 font-heading text-3xl font-semibold tracking-tight text-primary">
             Instala Agendita
           </h1>
@@ -60,11 +56,11 @@ export default async function InstallPage() {
         <InstallAppPanel />
 
         <p className="mt-5 text-center text-sm">
-          <Link href="/" className="font-semibold text-muted-foreground underline decoration-border underline-offset-4 hover:text-primary">
+          <Link href="/" className="inline-flex min-h-11 items-center font-semibold text-muted-foreground underline decoration-border underline-offset-4 hover:text-primary">
             Volver a Agendita
           </Link>
         </p>
       </section>
-    </main>
+    </main></MarketingShell>
   )
 }

@@ -1,16 +1,17 @@
 import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 import { prepareMiUser } from '@/lib/auth/mi-user'
-import { signOut } from '@/lib/auth/actions'
 import { PageMessage } from '@/components/ui/page-message'
-
-// Superficie personal: fuera de los índices, como /tarjeta/[token].
-export const metadata: Metadata = { robots: { index: false, follow: false } }
+import { ClientAccountShell } from '@/components/client/client-shell'
+import { signOut } from '@/lib/auth/actions'
 
 async function salirAction() {
   'use server'
   await signOut()
 }
+
+// Superficie personal: fuera de los índices, como /tarjeta/[token].
+export const metadata: Metadata = { title: 'Mi cuenta', robots: { index: false, follow: false } }
 
 export default async function MiLayout({ children }: { children: React.ReactNode }) {
   // Asegura fila User + vincula customers por email (una vez por request). Las
@@ -18,21 +19,12 @@ export default async function MiLayout({ children }: { children: React.ReactNode
   const result = await prepareMiUser()
   if (result.status === 'anon') redirect('/ingresar?next=/mi')
   if (result.status === 'conflict') {
-    return <PageMessage title="No pudimos preparar tu cuenta" message={result.message} />
+    return (
+      <ClientAccountShell accountAction={<form action={salirAction}><button type="submit" className="rounded-lg px-3 text-sm font-semibold text-primary hover:bg-secondary">Salir</button></form>}>
+        <PageMessage title="No pudimos preparar tu cuenta" message={result.message} />
+      </ClientAccountShell>
+    )
   }
 
-  return (
-    <div className="min-h-screen bg-background text-foreground">
-      {/* Contenedor único de la superficie /mi: las pages no fijan ancho propio. */}
-      <div className="mx-auto max-w-2xl px-4">
-        <header className="flex items-center justify-between py-4">
-          <span className="font-heading text-lg font-semibold text-primary">Mi cuenta</span>
-          <form action={salirAction}>
-            <button type="submit" className="text-sm text-muted-foreground hover:underline">Salir</button>
-          </form>
-        </header>
-        {children}
-      </div>
-    </div>
-  )
+  return <div data-client-auth-boundary="">{children}</div>
 }

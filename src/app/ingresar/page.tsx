@@ -4,8 +4,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { signInWithGoogle } from '@/lib/auth/actions'
 import { GoogleButton } from './google-button'
 import { sanitizeNext } from '@/lib/auth/sanitize-next'
+import { AuthShell } from '@/components/platform/platform-shell'
 
-export const metadata: Metadata = { title: 'Ingresar — Agendita' }
+export const metadata: Metadata = { title: 'Cuenta de cliente' }
 
 async function signInWithGoogleAction(next: string | null) {
   'use server'
@@ -19,26 +20,23 @@ export default async function IngresarPage({ searchParams }: { searchParams: Pro
   const bookingReturn = /^\/ir\/[A-Za-z0-9_-]+(?:\?|$)/.test(safeNext) ? safeNext : null
 
   return (
-    <main className="studio-shell flex items-center justify-center px-4 py-12">
-      <div className="w-full max-w-[440px]">
-        <div className="mb-10 text-center">
-          <h1 className="font-heading text-6xl font-semibold tracking-tight text-primary">Agendita</h1>
-          <p className="mt-3 text-xl text-muted-foreground">Tus reservas, puntos y beneficios</p>
-        </div>
-        <Card className="studio-card w-full border-border/40 px-4 py-6 sm:px-8">
+    <AuthShell audience="client">
+      <main className="mx-auto w-full max-w-[440px]">
+        <Card className="w-full border-border px-4 py-6 shadow-sm sm:px-8">
           <CardHeader className="px-0 text-left">
-            <CardTitle className="font-heading text-4xl font-semibold tracking-tight text-primary">Hola</CardTitle>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Acceso para clientes</p>
+            <CardTitle className="font-heading text-3xl font-semibold tracking-tight text-primary"><h1>Ver mi cuenta</h1></CardTitle>
             <CardDescription className="text-base text-muted-foreground">
               Ingresa con tu cuenta de Google para ver tus reservas y tu tarjeta de beneficios.
             </CardDescription>
           </CardHeader>
           <CardContent className="px-0">
             {error && (
-              <div className="mb-6 rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
+              <div role="alert" className="mb-6 rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
                 No se pudo iniciar sesión con Google. Intenta de nuevo.
               </div>
             )}
-            <form action={action}>
+            <form action={action} noValidate>
               <GoogleButton />
             </form>
             {bookingReturn && (
@@ -49,13 +47,13 @@ export default async function IngresarPage({ searchParams }: { searchParams: Pro
             <div className="my-8 h-px bg-border/50" />
             <p className="text-center text-base text-muted-foreground">
               ¿Administras un negocio?{' '}
-              <Link href="/login" className="font-semibold text-primary hover:underline">
+              <Link href="/login" className="inline-flex min-h-11 items-center font-semibold text-primary hover:underline">
                 Ingresa aquí
               </Link>
             </p>
           </CardContent>
         </Card>
-      </div>
-    </main>
+      </main>
+    </AuthShell>
   )
 }

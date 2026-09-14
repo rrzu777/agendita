@@ -10,6 +10,11 @@ import { PKG_TRANSFER_PAYMENT_METHOD } from '@/lib/bank-transfer/declared'
 import { formatMoney } from '@/lib/money'
 import { PackageTransferPanel } from './transfer-panel'
 import { getBankTransferInfo } from '@/server/actions/bank-transfer-public'
+import { TenantPublicShell } from '@/components/client/client-shell'
+import type { Metadata } from 'next'
+import { RefreshStatusButton } from './refresh-status-button'
+
+export const metadata: Metadata = { title: 'Estado de compra', robots: { index: false, follow: false } }
 
 interface ConfirmationPageProps {
   searchParams: Promise<{ purchaseId?: string }>
@@ -33,7 +38,7 @@ export default async function PackageConfirmationPage({ searchParams }: Confirma
     include: {
       product: { select: { name: true, isActive: true, price: true } },
       customer: { select: { userId: true } },
-      business: { select: { name: true, slug: true, subdomain: true, currency: true } },
+      business: { select: { name: true, slug: true, subdomain: true, logoUrl: true, brandColor: true, visualStyle: true, category: true, currency: true } },
       payments: { select: { status: true, provider: true, providerPaymentId: true } },
     },
   })
@@ -78,28 +83,28 @@ export default async function PackageConfirmationPage({ searchParams }: Confirma
     },
     pending: {
       icon: Clock,
-      iconColor: 'text-amber-500',
-      iconBg: 'bg-amber-50',
+      iconColor: 'text-warning',
+      iconBg: 'bg-warning/10',
       title: 'Procesando tu pago',
-      message: 'Estamos procesando tu pago. Te confirmaremos cuando se acredite; podés refrescar esta página.',
+      message: 'Estamos procesando tu pago. Te confirmaremos cuando se acredite; puedes actualizar esta página.',
     },
     awaiting_transfer: {
       icon: Clock,
-      iconColor: 'text-amber-500',
-      iconBg: 'bg-amber-50',
+      iconColor: 'text-warning',
+      iconBg: 'bg-warning/10',
       title: 'Te falta transferir',
       // Sin panel (el negocio pausó las transferencias entremedio) el copy no puede
       // referenciar datos bancarios ni el botón "Ya transferí" que no se renderizan.
       message: showTransferPanel
-        ? 'Reservamos tu paquete. Transferí y avisanos con "Ya transferí" para que el negocio confirme tu compra.'
-        : 'Reservamos tu paquete, pero el negocio pausó los pagos por transferencia. Escribile para coordinar el pago.',
+        ? 'Reservamos tu paquete. Transfiere y avísanos con "Ya transferí" para que el negocio confirme tu compra.'
+        : 'Reservamos tu paquete, pero el negocio pausó los pagos por transferencia. Escríbele para coordinar el pago.',
     },
     rejected: {
       icon: XCircle,
       iconColor: 'text-destructive',
       iconBg: 'bg-destructive/10',
       title: 'Pago no aprobado',
-      message: 'El pago no pudo procesarse. Podés intentar comprar de nuevo.',
+      message: 'El pago no pudo procesarse. Puedes intentar comprar de nuevo.',
     },
     expired: {
       icon: Clock,
@@ -107,36 +112,40 @@ export default async function PackageConfirmationPage({ searchParams }: Confirma
       iconBg: 'bg-muted',
       title: 'Tu compra expiró',
       message: showTransferPanel
-        ? 'Se venció el plazo, pero todavía podés retomarla: transferí y avisanos con "Ya transferí".'
-        : 'Se venció el tiempo para completar el pago. Podés iniciar la compra de nuevo.',
+        ? 'Se venció el plazo, pero todavía puedes retomarla: transfiere y avísanos con "Ya transferí".'
+        : 'Se venció el tiempo para completar el pago. Puedes iniciar la compra de nuevo.',
     },
     refunded: {
       icon: XCircle,
       iconColor: 'text-muted-foreground',
       iconBg: 'bg-muted',
       title: 'Compra reembolsada',
-      message: 'Este pago fue reembolsado. Si tenés dudas, escribile al negocio.',
+      message: 'Este pago fue reembolsado. Si tienes dudas, escríbele al negocio.',
     },
     disputed: {
       icon: XCircle,
       iconColor: 'text-destructive',
       iconBg: 'bg-destructive/10',
       title: 'Compra revertida',
-      message: 'Este pago fue reembolsado tras una disputa. Si tenés dudas, escribile al negocio.',
+      message: 'Este pago fue reembolsado tras una disputa. Si tienes dudas, escríbele al negocio.',
     },
   }[state]
   const Icon = config.icon
+  const catalogHref = `/paquetes/${purchase.business.slug}`
+  const shouldReturnToCatalog = state === 'rejected' || (state === 'expired' && !showTransferPanel)
+  const actionHref = shouldReturnToCatalog ? catalogHref : cardHref
+  const actionLabel = shouldReturnToCatalog ? 'Comprar otro paquete' : 'Ver mis paquetes'
 
   return (
-    <main className="studio-shell">
-      <div className="mx-auto max-w-md px-4 py-12">
+    <TenantPublicShell business={purchase.business} backHref={cardHref} backLabel="Volver a mi cuenta" width="narrow">
+      <div>
         <div className={`mx-auto mb-6 flex size-16 items-center justify-center rounded-full ${config.iconBg}`}>
           <Icon className={`size-8 ${config.iconColor}`} />
         </div>
         <h1 className="text-center font-heading text-2xl font-semibold text-primary">{config.title}</h1>
         <p className="mt-2 text-center text-muted-foreground">{config.message}</p>
 
-        <div className="studio-card mt-6 p-4 text-sm">
+        <div className="mt-6 rounded-[var(--radius)] border border-border bg-card p-4 text-sm shadow-sm">
           <div className="flex justify-between py-1">
             <span className="text-muted-foreground">Paquete</span>
             <span className="font-semibold">{purchase.product.name}</span>
@@ -161,11 +170,13 @@ export default async function PackageConfirmationPage({ searchParams }: Confirma
         )}
 
         <div className="mt-6">
-          <Button asChild className="h-12 w-full rounded-full">
-            <Link href={cardHref}>Ver mis paquetes</Link>
-          </Button>
+          {state === 'pending' ? (
+            <RefreshStatusButton />
+          ) : (
+            <Button asChild className="h-12 w-full rounded-full"><Link href={actionHref}>{actionLabel}</Link></Button>
+          )}
         </div>
       </div>
-    </main>
+    </TenantPublicShell>
   )
 }

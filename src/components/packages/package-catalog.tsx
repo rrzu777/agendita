@@ -36,15 +36,15 @@ export function PackageCatalog({ slug, currency, products, onlineAvailable, onli
   const [selected, setSelected] = useState<CatalogProduct | null>(() =>
     preselectedProductId ? products.find((p) => p.id === preselectedProductId) ?? null : null
   )
+  const checkoutAvailable = onlineAvailable || transferInfo !== null
 
   if (products.length === 0) {
     return <p className="text-center text-muted-foreground">Este negocio todavía no publicó paquetes.</p>
   }
 
-  // `onlineAvailable` también gatea el checkout por deep-link (?comprar=): sin
-  // esto, un link a un negocio sin pago online mostraría el form y moriría en el
-  // re-gate del server. Al caer al catálogo se ve el aviso + botón deshabilitado.
-  if (selected && isLoggedIn && prefill && onlineAvailable) {
+  // El checkout está disponible si existe al menos un método real. Mercado Pago
+  // y transferencia tienen guards server-side independientes.
+  if (selected && isLoggedIn && prefill && checkoutAvailable) {
     return (
       <PackageCheckout
         product={selected}
@@ -52,6 +52,7 @@ export function PackageCatalog({ slug, currency, products, onlineAvailable, onli
         prefill={prefill}
         onCancel={() => setSelected(null)}
         transferInfo={transferInfo}
+        onlineAvailable={onlineAvailable}
       />
     )
   }
@@ -61,7 +62,7 @@ export function PackageCatalog({ slug, currency, products, onlineAvailable, onli
 
   return (
     <div className="grid gap-4">
-      {!onlineAvailable && (
+      {!checkoutAvailable && (
         <p className="rounded-lg border border-border/60 bg-muted/40 p-3 text-sm text-muted-foreground">
           {onlineReason || 'Este negocio coordina el pago directamente.'}
         </p>
@@ -69,10 +70,10 @@ export function PackageCatalog({ slug, currency, products, onlineAvailable, onli
       {products.map((p) => {
         const total = p.quantity + p.bonusQuantity
         return (
-          <div key={p.id} className="studio-card p-5">
+          <div key={p.id} className="rounded-[var(--radius)] border border-border bg-card p-5 shadow-sm">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <h3 className="text-lg font-semibold text-primary">{p.name}</h3>
+                <h2 className="text-lg font-semibold text-primary">{p.name}</h2>
                 <p className="text-sm text-muted-foreground">
                   {total} sesiones{p.bonusQuantity > 0 ? ` (${p.quantity} + ${p.bonusQuantity} bonus)` : ''}
                 </p>
@@ -88,12 +89,12 @@ export function PackageCatalog({ slug, currency, products, onlineAvailable, onli
               </div>
             </div>
             <div className="mt-4">
-              {!onlineAvailable ? (
-                <Button disabled className="w-full rounded-full">No disponible online</Button>
+              {!checkoutAvailable ? (
+                <Button disabled size="touch" className="w-full rounded-xl">No disponible online</Button>
               ) : isLoggedIn ? (
-                <Button className="w-full rounded-full" onClick={() => setSelected(p)}>Comprar</Button>
+                <Button size="touch" className="w-full rounded-xl" onClick={() => setSelected(p)}>Comprar</Button>
               ) : (
-                <Button asChild className="w-full rounded-full">
+                <Button asChild size="touch" className="w-full rounded-xl">
                   <Link href={loginHref(p.id)}>Ingresar para comprar</Link>
                 </Button>
               )}

@@ -56,8 +56,22 @@ describe('auth and public form system', () => {
       expect(count(page.markup, /data-slot="form-field"/g)).toBe(page.controls)
       expect(count(page.markup, /data-density="touch"/g)).toBe(page.controls)
       expect(page.markup).not.toContain('studio-input')
+      expect(page.markup).toContain('<form')
+      expect(page.markup).toContain('noValidate=""')
+      expect(page.markup).toContain('<h1')
     }
     expect(pages[1].markup).toContain('data-slot="native-select"')
+    expect(pages[1].markup).toContain('name="useServiceTemplate"')
+    expect(pages[1].markup).toContain('value="true"')
+    expect(pages[1].markup).toContain('id="accept-terms"')
+    expect(pages[1].markup).toContain('aria-required="true"')
+    expect(pages[1].markup).toContain('aria-describedby="accept-terms-help"')
+    expect(pages[1].markup).toContain('id="accept-terms-help"')
+    expect(pages[1].markup).toContain('min-h-11')
+    expect(pages[0].markup).toContain('Mostrar contraseña')
+    expect(pages[1].markup).toContain('Mostrar contraseña')
+    expect(pages[3].markup).toContain('Mostrar contraseña')
+    expect(pages[0].markup).toContain('Gestiona tu negocio')
   })
 
   it('uses touch-density labels and descriptions in the public customer step', async () => {

@@ -59,7 +59,7 @@ export function ReviveBookingDialog({
             Revivir reserva
           </DialogTitle>
           <DialogDescription>
-            {serviceName} — {customerName || vocabulary.Client}. Elegí cómo reactivarla; el horario se vuelve a chequear.
+            {serviceName} — {customerName || vocabulary.Client}. Elige cómo reactivarla; el horario se vuelve a revisar.
           </DialogDescription>
         </DialogHeader>
 
@@ -69,7 +69,7 @@ export function ReviveBookingDialog({
             {isPending ? 'Procesando...' : 'Confirmar reserva'}
           </Button>
           <p className="text-xs text-muted-foreground">
-            Queda confirmada con el saldo pendiente que tenga; el pago lo registrás después.
+            Queda confirmada con el saldo pendiente que tenga; el pago lo registras después.
           </p>
 
           <Button

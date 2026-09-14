@@ -106,7 +106,7 @@ export function PackageCatalog({
     <section className="studio-card mt-6 p-4">
       <h3 className="text-lg font-semibold text-primary">Catálogo de paquetes</h3>
       <p className="text-sm text-muted-foreground">
-        Definí los paquetes de sesiones prepagadas que podés vender a tus {vocabulary.clients}.
+        Define los paquetes de sesiones prepagadas que puedes vender a tus {vocabulary.clients}.
       </p>
 
       <ul className="mt-4 divide-y divide-border">
