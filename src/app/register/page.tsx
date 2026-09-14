@@ -134,6 +134,9 @@ export default function RegisterPage() {
               <input
                 type="checkbox"
                 id="accept-terms"
+                required
+                aria-required="true"
+                aria-describedby="accept-terms-help"
                 checked={acceptedTerms}
                 onChange={(e) => setAcceptedTerms(e.target.checked)}
                 className="mt-3 size-5 rounded border-border accent-primary"
@@ -154,6 +157,7 @@ export default function RegisterPage() {
                 </a>
               </label>
             </div>
+            <p id="accept-terms-help" className="-mt-4 text-xs leading-relaxed text-muted-foreground">Requerido para crear la cuenta. Los documentos se abren en otra pestaña para que no pierdas los datos ingresados.</p>
             <Button
               type="submit"
               size="touch"

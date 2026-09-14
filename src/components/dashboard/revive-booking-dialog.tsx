@@ -59,7 +59,7 @@ export function ReviveBookingDialog({
             Revivir reserva
           </DialogTitle>
           <DialogDescription>
-            {serviceName} — {customerName || vocabulary.Client}. Elegí cómo reactivarla; el horario se vuelve a chequear.
+            {serviceName} — {customerName || vocabulary.Client}. Elige cómo reactivarla; el horario se vuelve a revisar.
           </DialogDescription>
         </DialogHeader>
 

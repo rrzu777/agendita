@@ -1,3 +1,5 @@
+import { act } from 'react'
+import { createRoot } from 'react-dom/client'
 import { describe, it, expect, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 
@@ -10,7 +12,7 @@ import { rescheduleBlockedReason } from '@/lib/bookings/hold'
 describe('BookingActions', () => {
   it('canManage: true → botón Cancelar reserva + link Reprogramar', () => {
     const html = renderToStaticMarkup(
-      <BookingActions bookingId="b1" slug="salon-ana" canManage cutoffHours={24} rescheduleBlockedReason={null} />,
+      <BookingActions bookingId="b1" slug="salon-ana" serviceName="Manicure" startsAtLabel="lunes 14 de septiembre, 10:00" canManage cutoffHours={24} rescheduleBlockedReason={null} />,
     )
     expect(html).toContain('Cancelar reserva')
     expect(html).toContain('Reprogramar')
@@ -19,7 +21,7 @@ describe('BookingActions', () => {
 
   it('canManage: false, cutoffHours 24 → mensaje de ventana, sin botones', () => {
     const html = renderToStaticMarkup(
-      <BookingActions bookingId="b1" slug="salon-ana" canManage={false} cutoffHours={24} rescheduleBlockedReason={null} />,
+      <BookingActions bookingId="b1" slug="salon-ana" serviceName="Manicure" startsAtLabel="lunes 14 de septiembre, 10:00" canManage={false} cutoffHours={24} rescheduleBlockedReason={null} />,
     )
     expect(html.toLowerCase()).toContain('hasta 24 horas')
     expect(html.toLowerCase()).toContain('contacta al negocio')
@@ -29,7 +31,7 @@ describe('BookingActions', () => {
 
   it('canManage: false, cutoffHours 0 → mensaje ya no se puede modificar', () => {
     const html = renderToStaticMarkup(
-      <BookingActions bookingId="b1" slug="salon-ana" canManage={false} cutoffHours={0} rescheduleBlockedReason={null} />,
+      <BookingActions bookingId="b1" slug="salon-ana" serviceName="Manicure" startsAtLabel="lunes 14 de septiembre, 10:00" canManage={false} cutoffHours={0} rescheduleBlockedReason={null} />,
     )
     expect(html.toLowerCase()).toContain('ya no se puede modificar')
     expect(html).not.toContain('<button')
@@ -44,6 +46,8 @@ describe('BookingActions', () => {
       <BookingActions
         bookingId="b1"
         slug="salon-ana"
+        serviceName="Manicure"
+        startsAtLabel="lunes 14 de septiembre, 10:00"
         canManage
         cutoffHours={24}
         rescheduleBlockedReason={rescheduleBlockedReason(
@@ -66,5 +70,33 @@ describe('BookingActions', () => {
     // Cancelar se queda: es lo único que sobre una reserva condenada hace lo que
     // dice, y libera el horario sin esperar al cron.
     expect(html).toContain('Cancelar reserva')
+  })
+
+  it('confirma la cancelación en un alert dialog contextual y restaura el foco', async () => {
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const root = createRoot(host)
+    await act(async () => root.render(
+      <BookingActions bookingId="b1" slug="salon-ana" serviceName="Manicure" startsAtLabel="lunes 14 de septiembre, 10:00" canManage cutoffHours={24} rescheduleBlockedReason={null} />,
+    ))
+
+    const trigger = Array.from(host.querySelectorAll('button')).find((button) => button.textContent === 'Cancelar reserva')!
+    trigger.focus()
+    await act(async () => trigger.click())
+
+    const dialog = document.querySelector('[role="alertdialog"]')
+    expect(dialog?.textContent).toContain('Manicure')
+    expect(dialog?.textContent).toContain('lunes 14 de septiembre, 10:00')
+    expect(dialog?.textContent).toContain('horario volverá a quedar disponible')
+    expect(document.activeElement?.textContent).toBe('Conservar reserva')
+
+    await act(async () => {
+      (document.activeElement as HTMLButtonElement).click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    expect(document.activeElement).toBe(trigger)
+
+    await act(async () => root.unmount())
+    host.remove()
   })
 })

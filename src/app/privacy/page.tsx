@@ -2,7 +2,7 @@ import { LegalShell } from '@/components/platform/platform-shell'
 
 export default function PrivacyPage() {
   return (
-    <LegalShell><article>
+    <LegalShell currentPage="privacy"><article>
       <h1 className="mb-8 text-4xl font-semibold tracking-normal text-primary">Política de Privacidad</h1>
 
       <div className="prose max-w-none space-y-6 text-sm leading-relaxed text-muted-foreground prose-headings:text-primary prose-strong:text-foreground prose-li:marker:text-muted-foreground">

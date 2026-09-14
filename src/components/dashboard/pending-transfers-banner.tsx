@@ -22,7 +22,7 @@ export function PendingTransfersBanner({ count }: { count: number }) {
             ? 'Tenés 1 transferencia por verificar'
             : `Tenés ${count} transferencias por verificar`}
         </span>{' '}
-        — revisá tu cuenta y confirmá o rechazá cada reserva.
+        — revisa tu cuenta y confirma o rechaza cada reserva.
       </p>
     </Link>
   )

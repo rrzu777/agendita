@@ -1,3 +1,4 @@
+import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 
 const business = vi.hoisted(() => ({ id: 'biz-a', slug: 'salon', subdomain: 'salon', name: 'Salón Aurora' }))
@@ -28,5 +29,13 @@ describe('profile acquisition navigation contracts', () => {
     await expect(generateMetadata()).resolves.toMatchObject({ title: 'Salón Aurora', description: expect.stringContaining('Salón Aurora') })
     tenant.mockResolvedValueOnce(null)
     await expect(generateMetadata()).resolves.toEqual({})
+  })
+  it('shows a concrete agenda preview on the platform landing without claiming customer data', async () => {
+    tenant.mockResolvedValue(null)
+    const html = renderToStaticMarkup(await HomePage({ searchParams: Promise.resolve({}) }))
+    expect(html).toContain('Así se ve una jornada')
+    expect(html).toContain('Reserva confirmada')
+    expect(html).toContain('Espacio disponible')
+    expect(html).toContain('Vista ilustrativa')
   })
 })

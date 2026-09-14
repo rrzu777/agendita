@@ -1,3 +1,5 @@
+import { act } from 'react'
+import { createRoot } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import { ClientAccountShell, ClientBusinessShell, TenantPublicShell } from '@/components/client/client-shell'
@@ -44,6 +46,7 @@ describe('client account shells', () => {
     expect(html).toContain('Beneficios')
     expect(html).toContain('Preferencias')
     expect(html).toContain('Reservar')
+    expect(html).toContain('aria-current="location"')
     expect(html).toContain('href="https://barberprofit.agendita.cl"')
     expect(html).toContain('sm:right-6')
     expect(html).not.toContain('sm:sticky')
@@ -79,6 +82,28 @@ describe('client account shells', () => {
     expect(html).toContain('href="/mi/mimos#proximas"')
     expect(html).not.toContain('href="#proximas"')
   })
+
+  it('updates the current in-page section from hash navigation without scroll spying', async () => {
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const root = createRoot(host)
+    window.history.replaceState(null, '', '#proximas')
+    await act(async () => root.render(
+      <ClientBusinessShell business={{ name: 'Mimos', logoUrl: null, brandColor: null, visualStyle: 'balanced', category: 'nails' }} bookingHref="/book/mimos">
+        <h1>Cuenta</h1>
+      </ClientBusinessShell>,
+    ))
+
+    expect(host.querySelector('a[href="#proximas"]')?.getAttribute('aria-current')).toBe('location')
+    window.history.replaceState(null, '', '#historial')
+    await act(async () => window.dispatchEvent(new HashChangeEvent('hashchange')))
+    expect(host.querySelector('a[href="#historial"]')?.getAttribute('aria-current')).toBe('location')
+    expect(host.querySelector('a[href="#proximas"]')?.getAttribute('aria-current')).toBeNull()
+
+    await act(async () => root.unmount())
+    host.remove()
+    window.history.replaceState(null, '', window.location.pathname)
+  })
 })
 
 describe('platform shells', () => {
@@ -89,14 +114,18 @@ describe('platform shells', () => {
     expect(owner).toContain('Gestiona tu negocio')
     expect(client).toContain('Tus reservas y beneficios')
     expect(owner).not.toEqual(client)
+    expect(owner).toContain('100dvh-6rem')
+    expect(owner).not.toContain('100vh-4rem')
   })
 
   it('gives legal pages a shared landmark and useful navigation', () => {
-    const html = renderToStaticMarkup(<LegalShell><h1>Privacidad</h1></LegalShell>)
+    const html = renderToStaticMarkup(<LegalShell currentPage="privacy"><h1>Privacidad</h1></LegalShell>)
     expect(html).toContain('aria-label="Documentos legales"')
     expect(html).toContain('Privacidad')
     expect(html).toContain('Términos')
     expect(html).toContain('Reembolsos')
+    expect(html).toContain('href="/privacy"')
+    expect(html).toContain('aria-current="page"')
   })
 
   it('keeps marketing navigation focused and free of owner sidebar destinations', () => {

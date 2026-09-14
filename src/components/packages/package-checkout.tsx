@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useRef, useState, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -75,6 +75,7 @@ export function PackageCheckout({ product, currency, prefill, onCancel, transfer
   const [acceptedTerms, setAcceptedTerms] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [errorField, setErrorField] = useState<'name' | 'phone' | 'terms' | null>(null)
   const nameRef = useRef<HTMLInputElement>(null)
   const phoneRef = useRef<HTMLInputElement>(null)
   const termsRef = useRef<HTMLInputElement>(null)
@@ -83,18 +84,22 @@ export function PackageCheckout({ product, currency, prefill, onCancel, transfer
 
   function validateForm(): boolean {
     setError('')
+    setErrorField(null)
     if (!name.trim()) {
       setError('Ingresa tu nombre')
+      setErrorField('name')
       nameRef.current?.focus()
       return false
     }
     if (!phone.trim()) {
       setError('Ingresa tu teléfono')
+      setErrorField('phone')
       phoneRef.current?.focus()
       return false
     }
     if (!acceptedTerms) {
       setError('Debes aceptar los términos')
+      setErrorField('terms')
       termsRef.current?.focus()
       return false
     }
@@ -176,7 +181,8 @@ export function PackageCheckout({ product, currency, prefill, onCancel, transfer
     }
   }
 
-  function handleFormSubmit() {
+  function handleFormSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
     if (!validateForm()) return
     if (transferInfo) {
       setPaso({ k: 'method', bank: transferInfo })
@@ -259,17 +265,17 @@ export function PackageCheckout({ product, currency, prefill, onCancel, transfer
   }
 
   return (
-    <div className="rounded-[var(--radius)] border border-border bg-card p-5 shadow-sm">
+    <form onSubmit={handleFormSubmit} noValidate className="rounded-[var(--radius)] border border-border bg-card p-5 shadow-sm">
       <Encabezado onBack={onCancel} backLabel="← Volver al catálogo" title={product.name} subtitle={subtitulo} />
 
       <div className="mt-4 space-y-3">
         <div>
           <label htmlFor="package-customer-name" className="text-sm font-semibold text-primary">Nombre <span className="text-muted-foreground">(requerido)</span></label>
-          <Input ref={nameRef} id="package-customer-name" value={name} onChange={(e) => { setName(e.target.value); setError('') }} placeholder="Tu nombre" density="touch" aria-required="true" aria-invalid={error === 'Ingresa tu nombre'} aria-describedby={error ? 'package-checkout-error' : undefined} />
+          <Input ref={nameRef} id="package-customer-name" value={name} onChange={(e) => { setName(e.target.value); setError(''); setErrorField(null) }} placeholder="Tu nombre" density="touch" aria-required="true" aria-invalid={errorField === 'name'} aria-describedby={errorField === 'name' ? 'package-checkout-error' : undefined} />
         </div>
         <div>
           <label htmlFor="package-customer-phone" className="text-sm font-semibold text-primary">Teléfono <span className="text-muted-foreground">(requerido)</span></label>
-          <Input ref={phoneRef} id="package-customer-phone" value={phone} onChange={(e) => { setPhone(e.target.value); setError('') }} placeholder="+56 9 1111 2222" inputMode="tel" density="touch" aria-required="true" aria-invalid={error === 'Ingresa tu teléfono'} aria-describedby={error ? 'package-checkout-error' : undefined} />
+          <Input ref={phoneRef} id="package-customer-phone" value={phone} onChange={(e) => { setPhone(e.target.value); setError(''); setErrorField(null) }} placeholder="+56 9 1111 2222" inputMode="tel" density="touch" aria-required="true" aria-invalid={errorField === 'phone'} aria-describedby={errorField === 'phone' ? 'package-checkout-error' : undefined} />
         </div>
         <div>
           <label htmlFor="package-customer-email" className="text-sm font-semibold text-primary">Email <span className="text-muted-foreground">(solo lectura)</span></label>
@@ -278,10 +284,14 @@ export function PackageCheckout({ product, currency, prefill, onCancel, transfer
         <label className="flex min-h-11 items-start gap-3 py-2 text-sm text-muted-foreground">
           <input
             ref={termsRef}
+            id="package-accepted-terms"
             type="checkbox"
+            required
             checked={acceptedTerms}
-            onChange={(e) => { setAcceptedTerms(e.target.checked); setError('') }}
-            aria-describedby={error ? 'package-checkout-error' : undefined}
+            onChange={(e) => { setAcceptedTerms(e.target.checked); setError(''); setErrorField(null) }}
+            aria-required="true"
+            aria-invalid={errorField === 'terms'}
+            aria-describedby={errorField === 'terms' ? 'package-checkout-error' : undefined}
             className="mt-0.5 size-5 accent-primary"
           />
           Acepto los términos y condiciones de la compra.
@@ -290,7 +300,7 @@ export function PackageCheckout({ product, currency, prefill, onCancel, transfer
 
       {errorLine}
 
-      <Button size="touch" className="mt-4 w-full rounded-xl" onClick={handleFormSubmit} disabled={loading}>
+      <Button type="submit" size="touch" className="mt-4 w-full rounded-xl" disabled={loading}>
         {loading ? (
           <>
             <Loader2 className="mr-2 size-4 animate-spin" />
@@ -302,6 +312,6 @@ export function PackageCheckout({ product, currency, prefill, onCancel, transfer
           `Pagar ${formatMoney(product.price, currency)}`
         )}
       </Button>
-    </div>
+    </form>
   )
 }

@@ -179,6 +179,8 @@ export default async function MiBusinessPage({ params }: { params: Promise<{ slu
                 <BookingActions
                   bookingId={b.id}
                   slug={business.slug}
+                  serviceName={bookingServiceName(b)}
+                  startsAtLabel={formatShortDate(b.startDateTime)}
                   // El MISMO `now` que la etiqueta de arriba, en los dos gates:
                   // si cada uno mirara su propio reloj, la fila podría decir
                   // "Expirada" y seguir ofreciendo Reprogramar, que es

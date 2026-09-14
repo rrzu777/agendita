@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { FormField } from '@/components/ui/form-field'
 import { Textarea } from '@/components/ui/textarea'
@@ -19,6 +19,11 @@ export function ReviewForm({ bookingId, token }: ReviewFormProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
+  const successTitleRef = useRef<HTMLHeadingElement>(null)
+
+  useEffect(() => {
+    if (success) successTitleRef.current?.focus()
+  }, [success])
 
   const canSubmit = rating >= 1 && rating <= 5
 
@@ -50,9 +55,9 @@ export function ReviewForm({ bookingId, token }: ReviewFormProps) {
 
   if (success) {
     return (
-      <div className="mt-6 text-center">
+      <div role="status" aria-live="polite" className="mt-6 text-center">
         <div className="mb-4 text-4xl text-primary">★</div>
-        <h2 className="text-xl font-semibold text-primary">¡Gracias por tu reseña!</h2>
+        <h2 ref={successTitleRef} tabIndex={-1} className="text-xl font-semibold text-primary outline-none focus-visible:ring-2 focus-visible:ring-ring">¡Gracias por tu reseña!</h2>
         <p className="mt-2 text-muted-foreground">
           Gracias por compartir tu experiencia.
         </p>

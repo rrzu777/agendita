@@ -165,7 +165,7 @@ export function ReservationSettingsForm({ businessId, initialValues }: Reservati
             label="Reserva sin pago online (horas)"
             required
             error={errors.manualHoldHours?.message}
-            help={<>Si no tenés pago online ni transferencia configurados, cuántas horas se guarda el horario de cada ciclo de reserva mientras coordinás el abono. Pasado el plazo, la reserva expira sola. A quien reserve le prometemos este plazo o su cita, lo que pase antes. <GuardedLink href="/dashboard/settings/payments" prefetch={false} className="underline underline-offset-4">Configurar pagos</GuardedLink></>}
+            help={<>Si no tienes pago online ni transferencia configurados, cuántas horas se guarda el horario de cada ciclo de reserva mientras coordinas el abono. Pasado el plazo, la reserva expira sola. A quien reserve le prometemos este plazo o su cita, lo que pase antes. <GuardedLink href="/dashboard/settings/payments" prefetch={false} className="underline underline-offset-4">Configurar pagos</GuardedLink></>}
           >
             {(a11y) => <Input id="reservation-manual-hold" density="form" type="number" min={1} max={720} {...register('manualHoldHours')} {...a11y} />}
           </FormField>
@@ -181,7 +181,7 @@ export function ReservationSettingsForm({ businessId, initialValues }: Reservati
             label="Confirmar cada reserva a mano"
             layout="inline"
             error={errors.requireBookingApproval?.message}
-            help="Las reservas llegan como solicitudes y vos las aceptás o las rechazás. El horario queda tomado mientras tanto, y si no respondés en 24 horas se libera solo. No aplica a los servicios con abono: ahí el pago ya hace de filtro."
+            help="Las reservas llegan como solicitudes y tú las aceptas o las rechazas. El horario queda tomado mientras tanto, y si no respondes en 24 horas se libera solo. No aplica a los servicios con abono: ahí el pago ya hace de filtro."
           >
             {(a11y) => <Switch id="reservation-approval" checked={Boolean(requireBookingApproval)} onCheckedChange={(value) => setValue('requireBookingApproval', value, { shouldDirty: true })} {...a11y} />}
           </FormField>
@@ -193,7 +193,7 @@ export function ReservationSettingsForm({ businessId, initialValues }: Reservati
             label="Sala de videollamada"
             optional
             error={errors.defaultMeetingUrl?.message}
-            help="Tu link fijo de Zoom o Meet. Se copia a cada reserva online cuando la toman, así que si lo cambiás, las citas ya avisadas conservan el que se mandó."
+            help="Tu link fijo de Zoom o Meet. Se copia a cada reserva online cuando la toman, así que si lo cambias, las citas ya avisadas conservan el que se mandó."
           >
             {(a11y) => <Input id="reservation-meeting-url" density="form" type="url" placeholder="https://meet.google.com/abc-defg-hij" {...register('defaultMeetingUrl')} {...a11y} />}
           </FormField>

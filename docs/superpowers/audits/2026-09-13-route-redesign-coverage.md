@@ -2,6 +2,12 @@
 
 Inventario canónico: 53 archivos `page.tsx` existentes al 2026-09-13. Una ruta solo cuenta como migrada cuando conserva sus acciones y estados, usa el shell asignado y pasa QA responsive en el track indicado.
 
+## Estado de entrega verificado
+
+- Rutas 1–31 (Tracks 1–4): publicadas en Production mediante PR #203 (`af02b2a`), #204 (`d7f5a20`), #205 (`da1711c`) y #206 (`e483fef`). El deployment de Production verificado el 2026-09-13 apunta a `e483fef` y figura `success`.
+- Rutas 32–53 (Track 5): implementación local sobre `b5cb190`, actualmente en ronda correctiva y pendiente de re-review y PR. No está publicada; tampoco existe autorización de push, PR o merge.
+- Las notas históricas de cada track se mantienen como evidencia del momento en que se escribieron; este bloque es el estado de entrega más reciente.
+
 ## Reglas de navegación
 
 - El sidebar del negocio muestra ocho destinos estables y despliega todas sus secciones funcionales permitidas por rol.
@@ -135,4 +141,8 @@ Paquetes conserva Mercado Pago y transferencia como contratos independientes: un
 
 El inventario automatizado asigna 53/53 rutas y afirma las 22/22 composiciones Task 5. Playwright recorrió las 22 con H1/título/estado esperado y cero overflow. Muestras: 320×844 `/mi/mimosnails` balanced (cuatro destinos y Reservar 48 px), 390×844 catálogo soft y registro con teclado/reduced motion, 834×1112 tarjeta contrast (targets 44 px), y 1440×1000 raíz tenant balanced.
 
-QA usó sólo `agendita_owner_analytics_test` en PostgreSQL local. Fixtures con IDs exactos se eliminaron; verificación final `0|0|0|balanced`. No se creó ni confirmó reserva, pago, mensaje, campaña u OAuth. No se consultó ni mutó producción, Jackeline o Mimos real. Revisión independiente: GO, cero findings. Gates finales: 4.262 tests verdes y 1 omitido, lint, typecheck, build Next 16 de 61 páginas y diff-check verdes. Premium strict reportó heurísticos globales preexistentes y falsos positivos de acciones reales en Track 5; no quedó blocker de alcance.
+Ronda correctiva: tokens semánticos warning/success compilados; cancelación migrada a AlertDialog con objeto/fecha/consecuencia, foco inicial seguro y restauración; checkout y aceptación legal usan formularios/required programáticos; navegación cliente/legal expone `aria-current`; éxito de review recibe foco/status; boundaries conservan contexto cliente neutral; la raíz tenant resuelve `themeColor` sólo en `page.tsx` y no vuelve dinámicas auth/legal; shells nuevos usan fondo opaco sin backdrop blur. El tuteo residual listado en owner se normalizó sin alterar reglas legales.
+
+QA usó sólo `agendita_owner_analytics_test` en PostgreSQL local. Fixtures con IDs exactos se eliminaron; verificación final `0|0|0|balanced`. No se creó ni confirmó reserva, pago, mensaje, campaña u OAuth. No se consultó ni mutó producción, Jackeline o Mimos real. El GO de la primera revisión quedó superado por un NO-GO posterior; la ronda correctiva sigue pendiente de re-review. Los gates de 4.262 tests verdes y 1 omitido, lint, typecheck, build Next 16 de 61 páginas y diff-check corresponden a la línea base previa a esta corrección. Premium strict reportó heurísticos globales preexistentes y falsos positivos de acciones reales en Track 5; no quedó blocker de alcance en esa corrida histórica.
+
+Evidencia fresca de la corrección: TDD 13 RED esperados y cierre enfocado 12/12 archivos, 69/69 tests; lint/typecheck verdes; build Next 16.3.2 con 61/61 páginas, `/` dinámica y auth/legal estáticas. La suite global bajo carga registró 482/487 archivos, 4.252 passed, 17 failed y 1 skipped; los cinco archivos afectados pasaron juntos 5/5 y 28/28. No se repitió la suite global por instrucción del coordinador: CI serial será el gate. QA persistida en `output/playwright/track5-fix-*.png` y JSON locales ignorados; teardown restauró `balanced`, el vínculo customer y confirmó que la reserva siguió `confirmed`. Impeccable no se volvió a ejecutar. Tracks 1–4 (rutas 1–31) ya están publicados; Track 5 continúa local y pendiente de re-review/PR.

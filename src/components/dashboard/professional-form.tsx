@@ -158,7 +158,7 @@ export function ProfessionalForm({
             <legend className="text-sm font-medium text-foreground">¿Qué servicios hace?</legend>
             {services.length === 0 ? (
               <p id={`${formId}-services-help`} className="mt-2 text-sm text-muted-foreground">
-                Todavía no tenés servicios activos. Creá uno y volvé para asignarlo.
+                Todavía no tienes servicios activos. Crea uno y vuelve para asignarlo.
               </p>
             ) : (
               <>

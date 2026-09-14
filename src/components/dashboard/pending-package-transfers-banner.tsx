@@ -22,7 +22,7 @@ export function PendingPackageTransfersBanner({ count }: { count: number }) {
             ? 'Tenés 1 transferencia de paquete por verificar'
             : `Tenés ${count} transferencias de paquete por verificar`}
         </span>{' '}
-        — revisá tu cuenta y confirmá o rechazá cada compra.
+        — revisa tu cuenta y confirma o rechaza cada compra.
       </p>
     </Link>
   )

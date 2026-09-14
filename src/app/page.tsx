@@ -10,7 +10,8 @@ import { prisma } from '@/lib/db'
 import { appendPublicAcquisitionSearch } from '@/lib/business/urls'
 import { CalendarCheck, Wallet, Bell } from 'lucide-react'
 import { MarketingShell } from '@/components/platform/platform-shell'
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
+import { businessThemeColor } from '@/lib/theme/business-theme'
 
 const features = [
   { icon: CalendarCheck, title: 'Reserva online', text: 'Tus clientes eligen servicios y horarios disponibles desde su teléfono.' },
@@ -22,7 +23,7 @@ function LandingPage() {
   return (
     <MarketingShell>
       <main className="mx-auto w-full max-w-6xl px-4 py-16 sm:px-6 sm:py-24">
-        <div className="grid items-end gap-10 border-b border-border pb-14 lg:grid-cols-[minmax(0,1.35fr)_minmax(300px,.65fr)]">
+        <div className="grid items-center gap-10 border-b border-border pb-14 lg:grid-cols-[minmax(0,1.1fr)_minmax(320px,.9fr)]">
           <div>
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Agenda para negocios de servicios</p>
           <h1 className="mb-6 font-heading text-5xl font-semibold tracking-tight text-primary md:text-7xl">
@@ -40,7 +41,17 @@ function LandingPage() {
             </Link>
           </div>
           </div>
-          <p className="max-w-sm border-l-2 border-primary pl-5 text-sm leading-relaxed text-muted-foreground">Belleza, barbería, terapia y otros servicios comparten la misma operación. El estilo visual lo decide cada negocio.</p>
+          <section aria-label="Vista ilustrativa de la agenda del día" className="rounded-2xl border border-border bg-card p-5 shadow-[var(--cream-shadow)] sm:p-6">
+            <div className="flex items-baseline justify-between gap-4 border-b border-border pb-4">
+              <div><p className="text-xs font-semibold text-muted-foreground">Así se ve una jornada</p><h2 className="mt-1 font-heading text-xl font-semibold text-primary">La cabina del día</h2></div>
+              <span className="rounded-full bg-secondary px-3 py-1 text-xs font-medium text-primary">Vista ilustrativa</span>
+            </div>
+            <ol className="mt-4 space-y-3 text-sm">
+              <li className="grid grid-cols-[3.5rem_1fr] gap-3"><span className="pt-3 font-medium text-muted-foreground">09:00</span><div className="rounded-xl border-l-4 border-success bg-success/10 px-4 py-3"><p className="font-semibold text-primary">Reserva confirmada</p><p className="mt-0.5 text-muted-foreground">Servicio y profesional visibles</p></div></li>
+              <li className="grid grid-cols-[3.5rem_1fr] gap-3"><span className="pt-3 font-medium text-muted-foreground">10:30</span><div className="rounded-xl border border-dashed border-border bg-background px-4 py-3"><p className="font-semibold text-primary">Espacio disponible</p><p className="mt-0.5 text-muted-foreground">Listo para recibir otra reserva</p></div></li>
+              <li className="grid grid-cols-[3.5rem_1fr] gap-3"><span className="pt-3 font-medium text-muted-foreground">12:00</span><div className="rounded-xl border-l-4 border-warning bg-warning/10 px-4 py-3"><p className="font-semibold text-primary">Pago por revisar</p><p className="mt-0.5 text-muted-foreground">El estado queda junto a la cita</p></div></li>
+            </ol>
+          </section>
         </div>
 
         <div className="mt-12 grid gap-px overflow-hidden rounded-2xl border border-border bg-border sm:grid-cols-3">
@@ -71,6 +82,12 @@ export async function generateMetadata(): Promise<Metadata> {
     title: business.name,
     description: `Reserva servicios y revisa la información de ${business.name}.`,
   }
+}
+
+export async function generateViewport(): Promise<Viewport> {
+  const tenant = await getTenantFromRequest().catch(() => null)
+  const business = tenant ? await getPublicBusinessBySubdomain(tenant.subdomain).catch(() => null) : null
+  return { themeColor: business ? businessThemeColor(business) : '#f7f7f4' }
 }
 
 export default async function HomePage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {

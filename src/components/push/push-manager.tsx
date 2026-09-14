@@ -405,7 +405,7 @@ export function PushManager({
   if (status === 'association-error') {
     return (
       <div className="space-y-3">
-        <p>El navegador creó la suscripción, pero no pudimos completar la activación en el servidor. Desactivala para limpiar el intento antes de volver a probar.</p>
+        <p>El navegador creó la suscripción, pero no pudimos completar la activación en el servidor. Desactívala para limpiar el intento antes de volver a probar.</p>
         <Button type="button" size="touch" variant="outline" onClick={deactivate}>Desactivar suscripción</Button>
       </div>
     )
@@ -451,7 +451,7 @@ export function PushManager({
   if (status === 'error') {
     return (
       <div className="space-y-3">
-        <p>No pudimos cambiar tus recordatorios. Revisá la conexión e intentá de nuevo.</p>
+        <p>No pudimos cambiar tus recordatorios. Revisa la conexión e intenta de nuevo.</p>
         <Button type="button" size="touch" onClick={retryAction === 'deactivate' ? deactivate : activate}>
           Reintentar
         </Button>

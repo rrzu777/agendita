@@ -1,3 +1,6 @@
+'use client'
+
+import { useSyncExternalStore } from 'react'
 import Link from 'next/link'
 import type { BusinessCategory, BusinessVisualStyle } from '@prisma/client'
 import { ArrowLeft, CalendarPlus, ChevronDown } from 'lucide-react'
@@ -34,11 +37,37 @@ export function ClientAccountShell({
 }
 
 const clientSections = [
-  { href: '#proximas', label: 'Próximas' },
-  { href: '#historial', label: 'Historial' },
-  { href: '#beneficios', label: 'Beneficios' },
-  { href: '#preferencias', label: 'Preferencias' },
+  { id: 'proximas', href: '#proximas', label: 'Próximas' },
+  { id: 'historial', href: '#historial', label: 'Historial' },
+  { id: 'beneficios', href: '#beneficios', label: 'Beneficios' },
+  { id: 'preferencias', href: '#preferencias', label: 'Preferencias' },
 ] as const
+
+const subscribeToHash = (onChange: () => void) => {
+  window.addEventListener('hashchange', onChange)
+  return () => window.removeEventListener('hashchange', onChange)
+}
+
+function ClientSectionNav({ businessName, sectionBaseHref }: { businessName: string; sectionBaseHref?: string }) {
+  const activeHash = useSyncExternalStore(
+    subscribeToHash,
+    () => window.location.hash.slice(1) || 'proximas',
+    () => 'proximas',
+  )
+
+  return (
+    <nav aria-label={`Secciones de ${businessName}`} className="mx-auto flex w-full max-w-5xl gap-1 overflow-x-auto px-4 pb-2 sm:px-6">
+      {clientSections.map((item) => {
+        const active = !sectionBaseHref && item.id === activeHash
+        return (
+          <a key={item.href} href={`${sectionBaseHref ?? ''}${item.href}`} aria-current={active ? 'location' : undefined} className={`flex min-h-11 shrink-0 items-center rounded-xl px-3 text-sm font-semibold hover:bg-secondary hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${active ? 'bg-secondary text-primary' : 'text-muted-foreground'}`}>
+            {item.label}
+          </a>
+        )
+      })}
+    </nav>
+  )
+}
 
 export function ClientBusinessShell({
   business,
@@ -55,7 +84,7 @@ export function ClientBusinessShell({
   return (
     <BusinessTheme business={business}>
       <div className="relative min-h-[calc(100vh-4rem)] bg-background pb-24 text-foreground">
-        <header className="sticky top-0 z-30 border-b border-border/70 bg-background/95 supports-[backdrop-filter]:bg-background/85 supports-[backdrop-filter]:backdrop-blur">
+        <header className="sticky top-0 z-30 border-b border-border/70 bg-background">
           <div className="mx-auto flex min-h-16 w-full max-w-5xl items-center gap-3 px-4 sm:px-6">
             <Link
               href="/mi"
@@ -80,16 +109,10 @@ export function ClientBusinessShell({
               Cambiar negocio <ChevronDown className="size-4" aria-hidden="true" />
             </Link>
           </div>
-          <nav aria-label={`Secciones de ${business.name}`} className="mx-auto flex w-full max-w-5xl gap-1 overflow-x-auto px-4 pb-2 sm:px-6">
-            {clientSections.map((item) => (
-              <a key={item.href} href={`${sectionBaseHref ?? ''}${item.href}`} className="flex min-h-11 shrink-0 items-center rounded-xl px-3 text-sm font-semibold text-muted-foreground hover:bg-secondary hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                {item.label}
-              </a>
-            ))}
-          </nav>
+          <ClientSectionNav businessName={business.name} sectionBaseHref={sectionBaseHref} />
         </header>
         <div className="mx-auto w-full max-w-5xl px-4 py-7 sm:px-6 sm:py-10">{children}</div>
-        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border/70 bg-background/95 p-3 pb-[max(.75rem,env(safe-area-inset-bottom))] supports-[backdrop-filter]:backdrop-blur sm:inset-x-auto sm:right-6 sm:bottom-6 sm:w-auto sm:border-0 sm:bg-transparent sm:p-0">
+        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border/70 bg-background p-3 pb-[max(.75rem,env(safe-area-inset-bottom))] sm:inset-x-auto sm:right-6 sm:bottom-6 sm:w-auto sm:border-0 sm:bg-transparent sm:p-0">
           <Link href={bookingHref} className="flex min-h-12 items-center justify-center gap-2 rounded-xl bg-primary px-5 font-semibold text-primary-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
             <CalendarPlus className="size-5" aria-hidden="true" />
             Reservar

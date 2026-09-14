@@ -74,4 +74,34 @@ describe('reviews form system', () => {
     expect(container.querySelector('[role="alert"]')?.textContent).toContain('Intenta nuevamente')
     expect(container.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(false)
   })
+
+  it('announces success and moves focus to the confirmation', async () => {
+    vi.mocked(submitReview).mockResolvedValueOnce({
+      ok: true,
+      data: {
+        id: 'review-1',
+        createdAt: new Date('2026-09-13T12:00:00Z'),
+        isApproved: false,
+        isHidden: false,
+        businessId: 'business-1',
+        bookingId: 'booking-1',
+        customerId: 'customer-1',
+        rating: 5,
+        comment: null,
+      },
+    })
+    const { ReviewForm } = await import('@/app/review/[bookingId]/review-form')
+    await act(async () => root.render(<ReviewForm bookingId="booking-1" token="token-1" />))
+    await act(async () => container.querySelector<HTMLButtonElement>('button[aria-label="5 estrellas"]')!.click())
+    await act(async () => {
+      container.querySelector<HTMLFormElement>('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+      await Promise.resolve()
+    })
+
+    const status = container.querySelector('[role="status"]')
+    const title = status?.querySelector('h2')
+    expect(status?.getAttribute('aria-live')).toBe('polite')
+    expect(title?.textContent).toContain('Gracias por tu reseña')
+    expect(document.activeElement).toBe(title)
+  })
 })

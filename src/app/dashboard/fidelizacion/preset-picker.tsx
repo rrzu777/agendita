@@ -32,7 +32,7 @@ export function PresetPicker({ presets, hasActiveProgram }: { presets: PresetCar
         </div>
       )}
 
-      <h4 className="mt-6 text-sm font-semibold text-foreground">Elegí cómo ganan (programa base)</h4>
+      <h4 className="mt-6 text-sm font-semibold text-foreground">Elige cómo ganan (programa base)</h4>
       <div className="mt-2 grid gap-3 sm:grid-cols-2">
         {bases.map((p) => <Card key={p.id} preset={p} hasActiveProgram={hasActiveProgram} />)}
       </div>
@@ -91,7 +91,7 @@ function Card({ preset, hasActiveProgram }: { preset: PresetCard; hasActiveProgr
           </p>
           {isBaseLike && hasActiveProgram && (
             <p className="text-xs text-amber-600">
-              Ya tenés un programa activo. Esto cambiará cómo se acumula y sumará una recompensa nueva;
+              Ya tienes un programa activo. Esto cambiará cómo se acumula y sumará una recompensa nueva;
               tus puntos acumulados no se pierden.
             </p>
           )}

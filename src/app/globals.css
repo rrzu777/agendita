@@ -28,6 +28,8 @@
   --color-input: var(--input);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
+  --color-warning: var(--warning);
+  --color-success: var(--success);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
@@ -65,6 +67,8 @@
   --accent: #f0f4f1;
   --accent-foreground: #20231f;
   --destructive: #ba1a1a;
+  --warning: #824508;
+  --success: #287651;
   --border: #e2e7e2;
   --input: #cfd7d0;
   --ring: #4f5d54;
@@ -104,6 +108,8 @@
   --accent: oklch(0.269 0 0);
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
+  --warning: #f2b86b;
+  --success: #67c99a;
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);
@@ -159,6 +165,11 @@
 }
 
 @media (forced-colors: active) {
+  :root,
+  .dark {
+    --warning: CanvasText;
+    --success: CanvasText;
+  }
   [data-business-theme] {
     --primary: CanvasText !important;
     --primary-foreground: Canvas !important;

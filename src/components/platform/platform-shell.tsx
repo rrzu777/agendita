@@ -10,7 +10,7 @@ export function AuthShell({
   const owner = audience === 'owner'
   return (
     <div className="min-h-screen bg-background px-4 py-8 text-foreground sm:py-12">
-      <div className="mx-auto grid min-h-[calc(100vh-4rem)] w-full max-w-5xl items-center gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(360px,440px)]">
+      <div className="mx-auto grid min-h-[calc(100dvh-4rem)] w-full max-w-5xl items-center gap-8 sm:min-h-[calc(100dvh-6rem)] lg:grid-cols-[minmax(0,1fr)_minmax(360px,440px)]">
         <section className="hidden max-w-xl lg:block" aria-label={owner ? 'Acceso para negocios' : 'Acceso para clientes'}>
           <Link href="/" className="inline-flex min-h-11 items-center font-heading text-xl font-semibold text-primary">Agendita</Link>
           <p className="mt-10 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">{owner ? 'Para negocios y equipos' : 'Para clientes'}</p>
@@ -30,7 +30,7 @@ export function AuthShell({
 export function MarketingShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <header className="border-b border-border/70 bg-background/95 supports-[backdrop-filter]:bg-background/85 supports-[backdrop-filter]:backdrop-blur">
+      <header className="border-b border-border/70 bg-background">
         <div className="mx-auto flex min-h-16 w-full max-w-6xl flex-wrap items-center justify-between gap-2 px-4 sm:px-6">
           <Link href="/" className="flex min-h-11 items-center font-heading text-lg font-semibold text-primary">Agendita</Link>
           <nav aria-label="Navegación principal" className="flex items-center gap-1 text-sm">
@@ -44,16 +44,22 @@ export function MarketingShell({ children }: { children: React.ReactNode }) {
   )
 }
 
-export function LegalShell({ children }: { children: React.ReactNode }) {
+export function LegalShell({ children, currentPage }: { children: React.ReactNode; currentPage: 'privacy' | 'terms' | 'refunds' }) {
+  const links = [
+    { href: '/privacy', key: 'privacy', label: 'Privacidad' },
+    { href: '/terms', key: 'terms', label: 'Términos' },
+    { href: '/refund-policy', key: 'refunds', label: 'Reembolsos' },
+  ] as const
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="border-b border-border/70 bg-card">
         <div className="mx-auto flex min-h-16 w-full max-w-4xl flex-wrap items-center justify-between gap-2 px-4 sm:px-6">
           <Link href="/" className="flex min-h-11 items-center font-heading text-lg font-semibold text-primary">Agendita</Link>
           <nav aria-label="Documentos legales" className="flex flex-wrap items-center gap-1 text-sm">
-            <Link href="/privacy" className="flex min-h-11 items-center rounded-lg px-3 text-muted-foreground hover:bg-secondary hover:text-primary">Privacidad</Link>
-            <Link href="/terms" className="flex min-h-11 items-center rounded-lg px-3 text-muted-foreground hover:bg-secondary hover:text-primary">Términos</Link>
-            <Link href="/refund-policy" className="flex min-h-11 items-center rounded-lg px-3 text-muted-foreground hover:bg-secondary hover:text-primary">Reembolsos</Link>
+            {links.map((item) => {
+              const active = currentPage === item.key
+              return <Link key={item.href} href={item.href} aria-current={active ? 'page' : undefined} className={`flex min-h-11 items-center rounded-lg px-3 font-medium ${active ? 'bg-secondary text-primary' : 'text-muted-foreground hover:bg-secondary hover:text-primary'}`}>{item.label}</Link>
+            })}
           </nav>
         </div>
       </header>
