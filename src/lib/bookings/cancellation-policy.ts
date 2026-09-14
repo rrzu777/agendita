@@ -45,5 +45,5 @@ export function cancellationWarningText(cutoffHours: number): string | null {
   if (cutoffHours <= 0) return null
 
   const unit = cutoffHours === 1 ? 'hora' : 'horas'
-  return `Podés cancelar o reprogramar hasta ${cutoffHours} ${unit} antes. Con menos anticipación, el abono no se devuelve. Para cancelaciones anteriores aplica la política del negocio.`
+  return `Puedes cancelar o reprogramar hasta ${cutoffHours} ${unit} antes. Con menos anticipación, el abono no se devuelve. Para cancelaciones anteriores aplica la política del negocio.`
 }

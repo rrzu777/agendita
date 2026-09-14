@@ -81,12 +81,20 @@ describe('el wizard con equipo', () => {
     act(() => Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Continuar')?.click())
   }
 
-  it('sin equipo el funnel tiene los cinco pasos de siempre y salta a la fecha', () => {
+  it('sin equipo mantiene las seis etapas visibles y salta a fecha con profesional auto-resuelto', () => {
+    const scroll = vi.fn()
+    HTMLElement.prototype.scrollIntoView = scroll
     montar([])
-    expect(container.textContent).toContain('Paso 1 de 5')
+    expect(container.textContent).toContain('Paso 1 de 6')
     elegirServicio()
-    expect(container.textContent).toContain('Paso 2 de 5')
+    expect(container.textContent).toContain('Paso 3 de 6')
+    expect(container.textContent).toContain('Asignado automáticamente')
     expect(container.textContent).toContain('Fecha')
+    const stepRegion = container.querySelector('#booking-step-content')
+    expect(document.activeElement).toBe(stepRegion)
+    expect(stepRegion?.getAttribute('aria-label')).toBe('Paso: Fecha y hora')
+    expect(stepRegion?.className).toContain('focus-visible:ring-3')
+    expect(scroll).toHaveBeenCalledWith({ block: 'start', behavior: 'auto' })
   })
 
   /**
@@ -99,7 +107,7 @@ describe('el wizard con equipo', () => {
     montar([persona('p-1', 'Juan'), persona('p-2', 'Sofía')])
     elegirServicio()
     expect(container.textContent).toContain('Paso 2 de 6')
-    expect(container.textContent).toContain('Elegí tu barbero')
+    expect(container.textContent).toContain('Elige tu barbero')
     expect(container.textContent).toContain('Juan')
     expect(container.textContent).toContain('Sofía')
   })
@@ -110,8 +118,8 @@ describe('el wizard con equipo', () => {
   it('con una sola elegible no aparece el paso', () => {
     montar([persona('p-1', 'Juan')])
     elegirServicio()
-    expect(container.textContent).toContain('Paso 2 de 5')
-    expect(container.textContent).not.toContain('Elegí tu barbero')
+    expect(container.textContent).toContain('Paso 3 de 6')
+    expect(container.textContent).not.toContain('Elige tu barbero')
   })
 
   /**
@@ -133,7 +141,7 @@ describe('el wizard con equipo', () => {
       ?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     elegirServicio()
 
-    expect(container.textContent).toContain('Elegí tu barbero')
+    expect(container.textContent).toContain('Elige tu barbero')
     expect(container.querySelector('[aria-pressed="true"]')?.textContent).toContain('Sofía')
   })
 
@@ -142,11 +150,13 @@ describe('el wizard con equipo', () => {
    * llega hasta el paso de la hora, que es donde cambia lo que se ofrece (la unión
    * del equipo en vez de la agenda de una).
    */
-  it('elegir "cualquiera" también avanza, y queda marcada al volver', () => {
+  it('elegir "cualquiera" requiere Continuar, y queda marcada al volver', () => {
     montar([persona('p-1', 'Juan'), persona('p-2', 'Sofía')])
     elegirServicio()
     const cualquiera = Array.from(container.querySelectorAll('button')).find((b) => b.textContent?.includes(ANYONE_LABEL))
     act(() => cualquiera?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    expect(container.textContent).toContain('Paso 2 de 6')
+    act(() => Array.from(container.querySelectorAll('button')).find((b) => b.textContent === 'Continuar')?.click())
     expect(container.textContent).toContain('Paso 3 de 6')
 
     act(() => Array.from(container.querySelectorAll('button')).find((b) => b.textContent === 'Atrás')
@@ -164,11 +174,14 @@ describe('el wizard con equipo', () => {
     expect(container.textContent).not.toContain(ANYONE_LABEL)
   })
 
-  it('elegir persona lleva a la fecha, ya con seis pasos', () => {
+  it('elegir persona sólo marca; Continuar lleva a la fecha', () => {
     montar([persona('p-1', 'Juan'), persona('p-2', 'Sofía')])
     elegirServicio()
     const boton = Array.from(container.querySelectorAll('button')).find((b) => b.textContent?.includes('Sofía'))
     act(() => boton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    expect(container.textContent).toContain('Paso 2 de 6')
+    expect(container.querySelector('[aria-pressed="true"]')?.textContent).toContain('Sofía')
+    act(() => Array.from(container.querySelectorAll('button')).find((b) => b.textContent === 'Continuar')?.click())
     expect(container.textContent).toContain('Paso 3 de 6')
     expect(container.textContent).toContain('Fecha')
   })
@@ -176,8 +189,23 @@ describe('el wizard con equipo', () => {
     window.history.replaceState({}, '', '/?professional=' + value)
     montar([persona('p-1', 'Juan'), persona('p-2', 'Sofía')])
     elegirServicio()
-    expect(container.textContent).toContain('Elegí tu barbero')
+    expect(container.textContent).toContain('Elige tu barbero')
     expect(container.querySelector('[aria-pressed="true"]')?.textContent).toContain(value === 'p-2' ? 'Sofía' : ANYONE_LABEL)
+  })
+  it('aplica juntos los deep links válidos de servicio y profesional sin avanzar', () => {
+    window.history.replaceState({}, '', '/?service=svc-1&professional=p-2')
+    montar([persona('p-1', 'Juan'), persona('p-2', 'Sofía')])
+    expect(container.textContent).toContain('Paso 1 de 6')
+    expect(container.querySelector('[aria-pressed="true"]')?.textContent).toContain('Corte')
+    act(() => Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Continuar')?.click())
+    expect(container.textContent).toContain('Paso 2 de 6')
+    expect(container.querySelector('[aria-pressed="true"]')?.textContent).toContain('Sofía')
+  })
+  it.each(['svc-1', 'foreign', 'svc-1&service=foreign'])('allowlists the service deep link %s without blocking multiselect', (value) => {
+    window.history.replaceState({}, '', '/?service=' + value)
+    montar([persona('p-1', 'Juan'), persona('p-2', 'Sofía')])
+    const selected = container.querySelector('[aria-pressed="true"]')
+    expect(Boolean(selected?.textContent.includes('Corte'))).toBe(value === 'svc-1')
   })
   it('a restored explicit choice wins over the original professional link after a cart edit', () => {
     const extra = { ...SERVICIO, id: 'nasal', name: 'Nasal' }

@@ -72,13 +72,13 @@ describe('resolveCancellationPolicy', () => {
 describe('cancellationWarningText', () => {
   it('genera el copy contractual exacto en plural', () => {
     expect(cancellationWarningText(24)).toBe(
-      'Podés cancelar o reprogramar hasta 24 horas antes. Con menos anticipación, el abono no se devuelve. Para cancelaciones anteriores aplica la política del negocio.',
+      'Puedes cancelar o reprogramar hasta 24 horas antes. Con menos anticipación, el abono no se devuelve. Para cancelaciones anteriores aplica la política del negocio.',
     )
   })
 
   it('usa singular para una hora', () => {
     expect(cancellationWarningText(1)).toBe(
-      'Podés cancelar o reprogramar hasta 1 hora antes. Con menos anticipación, el abono no se devuelve. Para cancelaciones anteriores aplica la política del negocio.',
+      'Puedes cancelar o reprogramar hasta 1 hora antes. Con menos anticipación, el abono no se devuelve. Para cancelaciones anteriores aplica la política del negocio.',
     )
   })
 

@@ -6,6 +6,8 @@ import type { FunnelSession } from '@/lib/customers/session-prefill'
 import { getVocabulary } from '@/lib/vocabulary'
 import { toFunnelProfessionals } from '@/lib/professionals/eligible'
 import { cancellationPolicyRevision } from '@/lib/bookings/cancellation-policy-revision'
+import { BusinessTheme } from '@/components/theme/business-theme'
+import Image from 'next/image'
 
 interface BookingBusinessPageProps {
   business: BookingBusiness
@@ -16,22 +18,21 @@ interface BookingBusinessPageProps {
 
 export function BookingBusinessPage({ business, profileHref, referralToken, session }: BookingBusinessPageProps) {
   return (
-    <main className="studio-shell">
-      <header className="sticky top-0 z-40 border-b border-border/50 bg-background/85 backdrop-blur">
+    <BusinessTheme business={business}>
+    <main className="studio-shell min-h-screen">
+      <header className="sticky top-0 z-40 border-b border-border bg-background/95">
         <div className="mx-auto flex h-16 max-w-2xl items-center justify-between px-4">
-          <Link href={profileHref} className="flex size-10 items-center justify-center rounded-full text-primary transition-colors hover:bg-muted" aria-label="Volver al perfil">
+          <Link href={profileHref} className="flex size-11 items-center justify-center rounded-lg text-primary transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" aria-label="Volver al perfil">
             <ArrowLeft className="size-6" />
           </Link>
-          <div className="text-center">
-            <h1 className="font-heading text-xl font-semibold tracking-tight text-primary">Agendita</h1>
-            <p className="text-sm text-muted-foreground">{business.name}</p>
+          <div className="min-w-0 px-3 text-center">
+            <h1 className="truncate font-heading text-lg font-semibold tracking-tight text-primary">{business.name}</h1>
+            <p className="text-xs text-muted-foreground">Reserva online</p>
           </div>
-          <div className="flex size-10 items-center justify-center rounded-full bg-secondary text-sm font-semibold text-primary">
-            {business.name.slice(0, 1).toUpperCase()}
-          </div>
+          {business.logoUrl || business.profileImageUrl ? <Image src={business.logoUrl || business.profileImageUrl!} alt="" width={44} height={44} unoptimized className="size-11 rounded-lg border border-border object-cover" /> : <div className="flex size-11 items-center justify-center rounded-lg bg-secondary text-sm font-semibold text-primary" aria-hidden="true">{business.name.slice(0, 1).toUpperCase()}</div>}
         </div>
       </header>
-      <div className="mx-auto max-w-2xl px-4 py-8">
+      <div className="mx-auto max-w-2xl px-4 py-6 sm:py-9">
         <BookingWizard
           businessId={business.id}
           slug={business.slug}
@@ -60,5 +61,6 @@ export function BookingBusinessPage({ business, profileHref, referralToken, sess
         />
       </div>
     </main>
+    </BusinessTheme>
   )
 }

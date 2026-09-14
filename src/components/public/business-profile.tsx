@@ -1,11 +1,12 @@
-import { Button } from '@/components/ui/button'
-import Link from 'next/link'
 import Image from 'next/image'
+import Link from 'next/link'
+import { Button } from '@/components/ui/button'
+import { BusinessTheme } from '@/components/theme/business-theme'
 import type { PublicBusiness } from '@/lib/business/public'
 import { formatDuration } from '@/lib/format-duration'
 import { formatMoney } from '@/lib/money'
 import { getVocabulary } from '@/lib/vocabulary'
-import { BadgeCheck, CalendarDays, Camera, Clock, Clock3, MapPin, MessageCircle, Package, Sparkles, Star } from 'lucide-react'
+import { CalendarDays, Camera, Clock, Clock3, MapPin, MessageCircle, Package, Star } from 'lucide-react'
 
 interface BusinessProfileProps {
   business: PublicBusiness
@@ -14,197 +15,88 @@ interface BusinessProfileProps {
   accountCta?: { label: 'Ingresar' | 'Mi cuenta'; href: string }
 }
 
+const daysOfWeek = ['Domingos', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábados']
+
 export function BusinessProfile({ business, bookingHref = `/book/${business.slug}`, packagesHref, accountCta }: BusinessProfileProps) {
   const v = getVocabulary(business.category)
-  const daysOfWeek = ['Domingos', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábados']
+  const identityImage = business.logoUrl || business.profileImageUrl
+  const hasServices = business.services.length > 0
+  const serviceHref = (serviceId: string) => {
+    const url = new URL(bookingHref, 'https://agendita.invalid')
+    url.searchParams.set('service', serviceId)
+    return `${url.pathname}${url.search}${url.hash}`
+  }
 
   return (
-    <main className="studio-shell pb-28">
-      <div className="mx-auto max-w-[420px] px-4 py-12">
-        {accountCta && (
-          <p className="-mt-6 mb-4 text-right">
-            <Link href={accountCta.href} className="text-sm font-semibold text-primary hover:underline">
-              {accountCta.label}
-            </Link>
-          </p>
-        )}
-        <section className="mb-10 text-center">
-          <div className="relative mx-auto mb-6 size-28">
-            {business.profileImageUrl ? (
-              <Image
-                src={business.profileImageUrl}
-                alt={business.name}
-                width={112}
-                height={112}
-                unoptimized
-                className="size-28 rounded-full border-4 border-white object-cover shadow-xl"
-              />
-            ) : (
-              <div className="flex size-28 items-center justify-center rounded-full border-4 border-white bg-secondary text-4xl font-semibold text-primary shadow-xl">
-                {business.name.slice(0, 2).toUpperCase()}
-              </div>
-            )}
-            <div className="absolute bottom-1 right-1 rounded-full border-2 border-white bg-primary p-1.5 text-primary-foreground">
-              <BadgeCheck className="size-4" />
-            </div>
-          </div>
-          <h1 className="mb-2 font-heading text-4xl font-semibold tracking-tight text-primary">{business.name}</h1>
-          {business.bio && <p className="mx-auto max-w-[310px] text-base leading-relaxed text-muted-foreground">{business.bio}</p>}
-
-          <div className="mt-6 flex justify-center gap-4">
-            {business.whatsapp && (
-              <a
-                href={`https://wa.me/${business.whatsapp.replace(/\D/g, '')}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex size-12 items-center justify-center rounded-full border border-border bg-card text-primary shadow-sm transition-transform active:scale-95"
-                aria-label="WhatsApp"
-              >
-                <MessageCircle className="size-5" />
-              </a>
-            )}
-            {business.instagram && (
-              <a
-                href={`https://instagram.com/${business.instagram.replace('@', '')}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex size-12 items-center justify-center rounded-full border border-border bg-card text-primary shadow-sm transition-transform active:scale-95"
-                aria-label="Instagram"
-              >
-                <Camera className="size-5" />
-              </a>
-            )}
-          </div>
-
-          {business.addressText && (
-            <p className="mt-4 inline-flex items-center gap-2 text-sm text-muted-foreground">
-              <MapPin className="size-4" />
-              {business.addressText}
-            </p>
-          )}
-        </section>
-
-        <section className="mb-7">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="font-heading text-2xl font-semibold tracking-tight text-primary">Servicios</h2>
-            <span className="rounded-full bg-secondary px-3 py-1 text-xs font-semibold text-primary">
-              {business.services.length} disponibles
-            </span>
-          </div>
-          <div className="space-y-3">
-            {business.services.map((service) => {
-              const color = service.pastelColor || '#f4dbca'
-              return (
-                <article
-                  key={service.id}
-                  className="flex items-center gap-4 rounded-[1.75rem] border p-4"
-                  style={{ backgroundColor: `${color}24`, borderColor: `${color}66` }}
-                >
-                  <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-card text-primary shadow-sm">
-                    <Sparkles className="size-5" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <h3 className="truncate font-heading text-lg font-semibold leading-snug text-primary">{service.name}</h3>
-                    <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm text-muted-foreground">
-                      <span className="inline-flex items-center gap-1">
-                        <Clock className="size-3.5" />
-                        {formatDuration(service.durationMinutes)}
-                      </span>
-                      <span aria-hidden="true">·</span>
-                      <span className="font-semibold text-primary">{formatMoney(service.price, business.currency)}</span>
-                      {service.depositAmount > 0 && (
-                        <>
-                          <span aria-hidden="true">·</span>
-                          <span>abono {formatMoney(service.depositAmount, business.currency)}</span>
-                        </>
-                      )}
-                    </p>
-                    {service.description && (
-                      <p className="mt-1 line-clamp-1 text-sm text-muted-foreground/90">{service.description}</p>
-                    )}
-                  </div>
-                </article>
-              )
-            })}
-          </div>
-        </section>
-
-        <section className="studio-card mb-7 p-6">
-          <h2 className="mb-5 flex items-center gap-3 font-heading text-2xl font-semibold tracking-tight text-primary">
-            <Clock3 className="size-6" />
-            Horarios
-          </h2>
-          <div className="space-y-3">
-            {business.availability.map((rule) => (
-              <div key={rule.id} className="flex justify-between gap-4 text-sm">
-                <span className="text-foreground">{daysOfWeek[rule.dayOfWeek]}</span>
-                <span className="font-semibold text-primary">
-                  {rule.startTime} - {rule.endTime}
-                </span>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        {business.reviews.length > 0 && (
-          <section className="mb-7">
-            <h2 className="mb-4 font-heading text-2xl font-semibold tracking-tight text-primary">Reseñas</h2>
-            <div className="space-y-3">
-              {business.reviews.map((review) => (
-                <article key={review.id} className="rounded-2xl border border-border bg-card p-4 shadow-sm">
-                  <div className="mb-3 flex items-center justify-between gap-3">
-                    <p className="text-sm font-semibold text-primary">
-                      {review.customer?.name || v.Client}
-                    </p>
-                    <div className="flex shrink-0 items-center gap-0.5" aria-label={`${review.rating} de 5 estrellas`}>
-                      {Array.from({ length: 5 }).map((_, i) => (
-                        <Star
-                          key={i}
-                          className={`size-4 ${i < review.rating ? 'fill-primary text-primary' : 'text-muted-foreground/25'}`}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                  {review.comment && (
-                    <p className="text-sm leading-relaxed text-foreground">{review.comment}</p>
-                  )}
-                </article>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {business.addressText && (
-          <section className="studio-card mb-7 flex items-center gap-4 p-5">
-            <div className="flex size-12 items-center justify-center rounded-xl bg-muted text-primary">
-              <MapPin className="size-5" />
-            </div>
-            <div>
-              <h2 className="font-heading font-semibold text-primary">Ubicación</h2>
-              <p className="text-sm text-muted-foreground">{business.addressText}</p>
-            </div>
-          </section>
-        )}
-      </div>
-
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border/50 bg-background/85 px-4 py-4 backdrop-blur">
-        <div className="mx-auto max-w-[420px]">
-          <Button asChild className="h-16 w-full rounded-full text-lg font-semibold shadow-[0_12px_28px_rgba(51,41,32,0.22)]">
-            <Link href={bookingHref}>
-              <CalendarDays className="mr-2 size-5" />
-              Reservar ahora
-            </Link>
-          </Button>
-          {packagesHref && (
-            <Button asChild variant="outline" className="mt-2 h-12 w-full rounded-full text-base font-semibold">
-              <Link href={packagesHref}>
-                <Package className="mr-2 size-5" />
-                Ver paquetes
+    <BusinessTheme business={business}>
+      <main className="studio-shell min-h-screen pb-[calc(7rem+env(safe-area-inset-bottom))]">
+        <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 sm:py-10">
+          <header className="mb-8 flex min-h-11 items-center justify-end">
+            {accountCta && (
+              <Link href={accountCta.href} className="inline-flex min-h-11 items-center rounded-lg px-3 text-sm font-semibold text-primary hover:bg-muted hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
+                {accountCta.label}
               </Link>
-            </Button>
-          )}
+            )}
+          </header>
+
+          <section className="mb-10 grid items-center gap-7 border-b border-border pb-10 md:grid-cols-[minmax(0,1fr)_18rem] md:gap-12">
+            <div className="min-w-0">
+              <div className="mb-5 flex items-center gap-4">
+                {identityImage ? (
+                  <Image src={identityImage} alt={`Identidad de ${business.name}`} width={88} height={88} unoptimized className="size-20 rounded-[var(--radius)] border border-border bg-card object-cover sm:size-22" />
+                ) : (
+                  <div className="flex size-20 shrink-0 items-center justify-center rounded-[var(--radius)] bg-secondary text-2xl font-semibold text-primary sm:size-22">
+                    {business.name.slice(0, 2).toUpperCase()}
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <h1 className="break-words font-heading text-4xl font-semibold tracking-[-0.03em] text-primary sm:text-5xl">{business.name}</h1>
+                  {business.city && <p className="mt-1 text-sm text-muted-foreground">{business.city}</p>}
+                </div>
+              </div>
+              {business.bio && <p className="max-w-2xl text-base leading-relaxed text-foreground sm:text-lg">{business.bio}</p>}
+              <div className="mt-5 flex flex-wrap gap-2">
+                {business.whatsapp && <a href={`https://wa.me/${business.whatsapp.replace(/\D/g, '')}`} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-border bg-card px-4 text-sm font-semibold text-primary hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"><MessageCircle className="size-4" />WhatsApp</a>}
+                {business.instagram && <a href={`https://instagram.com/${business.instagram.replace('@', '')}`} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-border bg-card px-4 text-sm font-semibold text-primary hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"><Camera className="size-4" />Instagram</a>}
+              </div>
+            </div>
+            <div className="rounded-[var(--radius)] bg-primary p-6 text-primary-foreground">
+              <p className="font-heading text-xl font-semibold">Reserva a tu ritmo</p>
+              <p className="mt-2 text-sm leading-relaxed opacity-85">Elige uno o varios servicios y revisa los horarios disponibles antes de compartir tus datos.</p>
+              {hasServices ? <Button asChild variant="secondary" size="touch" className="mt-5 w-full"><Link href={bookingHref}><CalendarDays className="size-5" />Reservar ahora</Link></Button> : <p className="mt-5 rounded-lg bg-background/15 px-4 py-3 text-center text-sm font-semibold">Sin servicios disponibles</p>}
+            </div>
+          </section>
+
+          <div className="grid gap-10 md:grid-cols-[minmax(0,1.55fr)_minmax(16rem,.75fr)]">
+            <section aria-labelledby="public-services-title">
+              <div className="mb-4 flex items-end justify-between gap-4">
+                <h2 id="public-services-title" className="font-heading text-2xl font-semibold tracking-tight text-primary">Servicios</h2>
+                {hasServices && <span className="text-sm text-muted-foreground">{business.services.length} disponibles</span>}
+              </div>
+              {hasServices ? (
+                <div className="divide-y divide-border rounded-[var(--radius)] border border-border bg-card px-4 sm:px-6">
+                  {business.services.map((service) => (
+                    <article key={service.id} className="grid gap-2 py-5 sm:grid-cols-[minmax(0,1fr)_auto] sm:gap-6">
+                      <div className="min-w-0"><h3 className="break-words font-heading text-lg font-semibold text-primary">{service.name}</h3>{service.description && <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{service.description}</p>}</div>
+                      <div className="flex flex-wrap items-center gap-x-2 text-sm text-muted-foreground sm:justify-end"><span className="inline-flex items-center gap-1"><Clock className="size-4" />{formatDuration(service.durationMinutes)}</span><span className="font-semibold text-primary">{formatMoney(service.price, business.currency)}</span>{service.depositAmount > 0 && <span className="basis-full sm:text-right">Abono {formatMoney(service.depositAmount, business.currency)}</span>}<Link href={serviceHref(service.id)} className="mt-2 inline-flex min-h-11 basis-full items-center justify-center rounded-lg border border-border px-3 font-semibold text-primary hover:bg-muted">Reservar este servicio</Link></div>
+                    </article>
+                  ))}
+                </div>
+              ) : <div className="rounded-[var(--radius)] border border-border bg-card p-6"><p className="font-semibold text-primary">Aún no hay servicios publicados</p><p className="mt-1 text-sm text-muted-foreground">Puedes contactar al negocio para consultar su oferta.</p></div>}
+            </section>
+
+            <aside className="space-y-6">
+              <section className="rounded-[var(--radius)] border border-border bg-card p-5" aria-labelledby="public-hours-title"><h2 id="public-hours-title" className="flex items-center gap-2 font-heading text-xl font-semibold text-primary"><Clock3 className="size-5" />Horarios</h2>{business.availability.length ? <div className="mt-4 space-y-3">{business.availability.map((rule) => <div key={rule.id} className="flex justify-between gap-4 text-sm"><span>{daysOfWeek[rule.dayOfWeek]}</span><span className="font-semibold text-primary">{rule.startTime}–{rule.endTime}</span></div>)}</div> : <p className="mt-3 text-sm leading-relaxed text-muted-foreground">Los horarios aparecerán cuando el negocio publique su disponibilidad.</p>}</section>
+              {business.addressText && <section className="rounded-[var(--radius)] border border-border bg-card p-5" aria-labelledby="public-location-title"><h2 id="public-location-title" className="flex items-center gap-2 font-heading text-xl font-semibold text-primary"><MapPin className="size-5" />Ubicación</h2><p className="mt-3 break-words text-sm text-muted-foreground">{business.addressText}</p></section>}
+              {packagesHref && <Button asChild variant="outline" size="touch" className="w-full"><Link href={packagesHref}><Package className="size-5" />Ver paquetes</Link></Button>}
+            </aside>
+          </div>
+
+          {business.reviews.length > 0 && <section className="mt-10 border-t border-border pt-10" aria-labelledby="public-reviews-title"><div className="mb-4 flex items-end justify-between gap-4"><h2 id="public-reviews-title" className="font-heading text-2xl font-semibold text-primary">Reseñas</h2><span className="text-sm text-muted-foreground">{business._count.reviews} publicadas</span></div><div className="grid gap-4 md:grid-cols-3">{business.reviews.map((review) => <article key={review.id} className="rounded-[var(--radius)] border border-border bg-card p-5"><div className="flex items-start justify-between gap-3"><p className="font-semibold text-primary">{review.customer?.name || v.Client}</p><span className="flex shrink-0 gap-0.5" aria-label={`${review.rating} de 5 estrellas`}>{Array.from({ length: 5 }).map((_, index) => <Star key={index} className={`size-4 ${index < review.rating ? 'fill-primary text-primary' : 'text-muted-foreground/30'}`} />)}</span></div>{review.comment && <p className="mt-3 text-sm leading-relaxed text-foreground">{review.comment}</p>}</article>)}</div></section>}
         </div>
-      </div>
-    </main>
+
+        {hasServices && <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:hidden"><Button asChild size="touch" className="w-full"><Link href={bookingHref}><CalendarDays className="size-5" />Reservar ahora</Link></Button></div>}
+      </main>
+    </BusinessTheme>
   )
 }

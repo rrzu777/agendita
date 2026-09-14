@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { unstable_rethrow } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { FormField } from '@/components/ui/form-field'
@@ -30,6 +30,8 @@ export function StepCustomer({ data, sessionEmail, onLoginCta, onSubmit, onBack 
   const [dismissedSession, setDismissedSession] = useState(false)
   const [loginPending, setLoginPending] = useState(false)
   const [loginError, setLoginError] = useState('')
+  const [errors, setErrors] = useState<Record<string, string>>({})
+  const formRef = useRef<HTMLFormElement>(null)
   const showSession = sessionEmail !== null && !dismissedSession
 
   function handleNotMe() {
@@ -39,7 +41,32 @@ export function StepCustomer({ data, sessionEmail, onLoginCta, onSubmit, onBack 
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    const nextErrors: Record<string, string> = {}
+    if (!formData.customerName.trim()) nextErrors.customerName = 'Ingresa tu nombre completo.'
+    if (formData.customerPhone.trim().length < 8) nextErrors.customerPhone = 'Ingresa un teléfono válido con al menos 8 caracteres.'
+    if (needsAddress && !formData.serviceAddress.trim()) nextErrors.serviceAddress = 'Ingresa la dirección donde será la atención.'
+    if (formData.customerEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.customerEmail)) nextErrors.customerEmail = 'Ingresa un email válido o deja el campo vacío.'
+    setErrors(nextErrors)
+    const first = Object.keys(nextErrors)[0]
+    if (first) {
+      const ids: Record<string, string> = { customerName: 'booking-customer-name', customerPhone: 'booking-customer-phone', customerEmail: 'booking-customer-email', serviceAddress: 'booking-service-address' }
+      formRef.current?.querySelector<HTMLElement>(`#${ids[first]}`)?.focus()
+      return
+    }
     onSubmit(formData)
+  }
+
+  function update<K extends keyof typeof formData>(field: K, value: (typeof formData)[K]) {
+    setFormData((current) => ({ ...current, [field]: value }))
+    setErrors((current) => {
+      const key = field.replace(/^customer/, '')
+      const normalized = key.charAt(0).toLowerCase() + key.slice(1)
+      if (!(normalized in current) && !(field in current)) return current
+      const next = { ...current }
+      delete next[normalized]
+      delete next[field]
+      return next
+    })
   }
 
   return (
@@ -74,19 +101,19 @@ export function StepCustomer({ data, sessionEmail, onLoginCta, onSubmit, onBack 
       {showSession && (
         <p className="mb-6 text-sm text-muted-foreground">
           Reservando como {sessionEmail} ·{' '}
-          <button type="button" onClick={handleNotMe} className="font-semibold text-primary hover:underline">No soy yo</button>
+          <button type="button" onClick={handleNotMe} className="inline-flex min-h-11 items-center px-2 font-semibold text-primary hover:underline">No soy yo</button>
         </p>
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-5">
-        <FormField id="booking-customer-name" label="Nombre completo" required help="Obligatorio">
-          {(a11y) => <div className="relative"><User className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" /><Input id="booking-customer-name" autoComplete="name" className="pl-12" required minLength={2} value={formData.customerName} onChange={e => setFormData({ ...formData, customerName: e.target.value })} placeholder="Tu nombre" density="touch" {...a11y} /></div>}
+      <form ref={formRef} onSubmit={handleSubmit} noValidate className="space-y-5">
+        <FormField id="booking-customer-name" label="Nombre completo" required help="Obligatorio" error={errors.customerName}>
+          {(a11y) => <div className="relative"><User className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" /><Input id="booking-customer-name" autoComplete="name" className="pl-12" required maxLength={100} value={formData.customerName} onChange={e => update('customerName', e.target.value)} placeholder="Tu nombre" density="touch" {...a11y} /></div>}
         </FormField>
-        <FormField id="booking-customer-phone" label="Teléfono" required help="Obligatorio · Para contactarte por tu reserva.">
-          {(a11y) => <div className="relative"><Phone className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" /><Input id="booking-customer-phone" autoComplete="tel" className="pl-12" required type="tel" value={formData.customerPhone} onChange={e => setFormData({ ...formData, customerPhone: e.target.value })} placeholder="+569..." density="touch" {...a11y} /></div>}
+        <FormField id="booking-customer-phone" label="Teléfono" required help="Obligatorio · Para contactarte por tu reserva." error={errors.customerPhone}>
+          {(a11y) => <div className="relative"><Phone className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" /><Input id="booking-customer-phone" autoComplete="tel" className="pl-12" required type="tel" value={formData.customerPhone} onChange={e => update('customerPhone', e.target.value)} placeholder="+569..." density="touch" {...a11y} /></div>}
         </FormField>
-        <FormField id="booking-customer-email" label="Email" help="Opcional · Para recibir los detalles de tu reserva por correo.">
-          {(a11y) => <div className="relative"><Mail className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" /><Input id="booking-customer-email" autoComplete="email" className="pl-12" type="email" value={formData.customerEmail} onChange={e => setFormData({ ...formData, customerEmail: e.target.value })} placeholder="tu@email.com" density="touch" {...a11y} /></div>}
+        <FormField id="booking-customer-email" label="Email" optional help="Para recibir los detalles de tu reserva por correo." error={errors.customerEmail}>
+          {(a11y) => <div className="relative"><Mail className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" /><Input id="booking-customer-email" autoComplete="email" className="pl-12" type="email" value={formData.customerEmail} onChange={e => update('customerEmail', e.target.value)} placeholder="tu@email.com" density="touch" {...a11y} /></div>}
         </FormField>
         <details className="rounded-2xl border border-border p-4">
           <summary className="cursor-pointer font-medium text-primary">Agregar fecha de nacimiento (opcional)</summary>
@@ -98,7 +125,7 @@ export function StepCustomer({ data, sessionEmail, onLoginCta, onSubmit, onBack 
             autoComplete="bday"
             max={new Date().toISOString().slice(0, 10)}
             value={formData.customerBirthDate}
-            onChange={e => setFormData({ ...formData, customerBirthDate: e.target.value })}
+            onChange={e => update('customerBirthDate', e.target.value)}
             density="touch"
             {...a11y}
           />}
@@ -106,15 +133,15 @@ export function StepCustomer({ data, sessionEmail, onLoginCta, onSubmit, onBack 
           </div>
         </details>
         {needsAddress && (
-          <FormField id="booking-service-address" label="Dirección" required help="Obligatorio para atención a domicilio.">
-            {(a11y) => <div className="relative"><MapPin className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" /><Input id="booking-service-address" className="pl-12" required value={formData.serviceAddress} onChange={e => setFormData({ ...formData, serviceAddress: e.target.value })} placeholder="Calle, número, depto, comuna" density="touch" {...a11y} /></div>}
+          <FormField id="booking-service-address" label="Dirección" required help="Obligatorio para atención a domicilio." error={errors.serviceAddress}>
+            {(a11y) => <div className="relative"><MapPin className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" /><Input id="booking-service-address" className="pl-12" required value={formData.serviceAddress} onChange={e => update('serviceAddress', e.target.value)} placeholder="Calle, número, depto, comuna" density="touch" {...a11y} /></div>}
           </FormField>
         )}
         <details className="rounded-2xl border border-border p-4">
           <summary className="cursor-pointer font-medium text-primary">Agregar una nota (opcional)</summary>
           <div className="mt-4">
         <FormField id="booking-customer-notes" label="Notas" help="Opcional">
-          {(a11y) => <Textarea id="booking-customer-notes" value={formData.customerNotes} maxLength={1000} onChange={e => setFormData({ ...formData, customerNotes: e.target.value })} placeholder="¿Algo que debamos saber?" density="touch" {...a11y} />}
+          {(a11y) => <Textarea id="booking-customer-notes" className="resize-none" value={formData.customerNotes} maxLength={1000} onChange={e => update('customerNotes', e.target.value)} placeholder="¿Algo que debamos saber?" density="touch" {...a11y} />}
         </FormField>
           </div>
         </details>

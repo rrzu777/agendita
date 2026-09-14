@@ -8,10 +8,26 @@ import { getFunnelSession } from '@/lib/customers/session-prefill'
 import { PublicAnalytics } from '@/components/analytics/public-analytics'
 import { isPublicAnalyticsEligible } from '@/lib/analytics/public-context'
 import { getConfiguredAnalyticsConsentVersion } from '@/lib/analytics/budget'
+import type { Metadata } from 'next'
 
 // Los referralToken son UUID v4 (crypto.randomUUID). Validar la forma reduce la
 // superficie y evita lookups innecesarios con tokens arbitrarios.
 const REFERRAL_TOKEN_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+export async function generateMetadata(): Promise<Metadata> {
+  const requestHeaders = await headers()
+  const tenant = await getTenantFromRequest(requestHeaders)
+  const business = tenant ? await getBookingBusinessBySubdomain(tenant.subdomain) : null
+
+  if (!business) {
+    return { title: 'Reserva tu hora — Agendita' }
+  }
+
+  return {
+    title: `${business.name} — Reserva tu hora`,
+    description: `Elige servicios, profesional y horario para reservar en ${business.name}.`,
+  }
+}
 
 export default async function BookIndexPage({
   searchParams,
@@ -45,8 +61,9 @@ export default async function BookIndexPage({
   const businesses = await prisma.business.findMany({
     where: { isActive: true },
     select: { id: true, name: true, slug: true },
-    take: 10,
+    take: 11,
   })
+  const visibleBusinesses = businesses.slice(0, 10)
 
   return (
     <div className="studio-shell py-10">
@@ -56,7 +73,8 @@ export default async function BookIndexPage({
           <p className="mt-2 text-muted-foreground">Selecciona un negocio para continuar</p>
         </div>
         <div className="space-y-4">
-          {businesses.map((business) => (
+          {!businesses.length && <div className="studio-card p-6"><p className="font-semibold text-primary">No hay negocios disponibles</p><p className="mt-1 text-sm text-muted-foreground">Abre el enlace directo que te compartió el negocio o vuelve a intentarlo más tarde.</p></div>}
+          {visibleBusinesses.map((business) => (
             <Link
               key={business.id}
               href={`/book/${business.slug}`}
@@ -66,6 +84,7 @@ export default async function BookIndexPage({
               <p className="mt-1 font-semibold text-muted-foreground">Hacer reserva →</p>
             </Link>
           ))}
+          {businesses.length > visibleBusinesses.length && <p className="text-sm text-muted-foreground">Mostramos los primeros 10 negocios. Para abrir otro, usa su enlace directo.</p>}
         </div>
       </div>
     </div>

@@ -85,7 +85,7 @@ describe('/book/confirmation cancellation warning', () => {
     mockFindUnique.mockResolvedValue(booking())
     const html = renderToStaticMarkup(await BookingConfirmationPage({ searchParams }))
 
-    const warning = 'Podés cancelar o reprogramar hasta 24 horas antes. Con menos anticipación, el abono no se devuelve. Para cancelaciones anteriores aplica la política del negocio.'
+    const warning = 'Puedes cancelar o reprogramar hasta 24 horas antes. Con menos anticipación, el abono no se devuelve. Para cancelaciones anteriores aplica la política del negocio.'
     expect(html).toContain(warning)
     expect(html).not.toContain('hasta 72 horas antes')
     expect(html).toContain('Condiciones aceptadas')

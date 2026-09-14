@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { businessThemeCssVariables, resolveBusinessTheme } from '@/lib/theme/business-theme'
+import { businessThemeColor, businessThemeCssVariables, resolveBusinessTheme } from '@/lib/theme/business-theme'
 
 describe('resolveBusinessTheme', () => {
   it('derives an accessible tenant palette from a valid custom color', () => {
@@ -32,6 +32,11 @@ describe('resolveBusinessTheme', () => {
 
     expect(theme.brand).toBe('#4F5D54')
     expect(JSON.stringify(theme)).not.toContain('javascript')
+    expect(businessThemeColor({
+      brandColor: 'red; background:url(javascript:alert(1))',
+      visualStyle: 'balanced',
+      category: 'barber',
+    })).toBe('#35524A')
   })
 
   it('keeps visual styles non-gendered and changes geometry deliberately', () => {

@@ -1,5 +1,6 @@
 import { bookingServiceName } from '@/lib/bookings/service-lines'
 import Link from 'next/link'
+import Image from 'next/image'
 import { notFound } from 'next/navigation'
 import { CheckCircle2, Clock, XCircle, Calendar, Check, AlertCircle, MapPin } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -27,9 +28,22 @@ import { AccountPushLink } from '@/components/push/account-push-link'
 import { getAppUrl } from '@/lib/business/urls'
 import { isPushBookingEligible } from '@/lib/push/eligibility'
 import { InstallAppBanner } from '@/components/pwa/install-app-banner'
+import { BusinessTheme } from '@/components/theme/business-theme'
+import type { Viewport } from 'next'
+import { businessThemeColor } from '@/lib/theme/business-theme'
 
 interface BookingConfirmationPageProps {
   searchParams: Promise<{ bookingId?: string }>
+}
+
+export async function generateViewport({ searchParams }: BookingConfirmationPageProps): Promise<Viewport> {
+  const { bookingId } = await searchParams
+  if (!bookingId) return { themeColor: '#f7f7f4' }
+  const booking = await prisma.booking.findUnique({
+    where: { id: bookingId },
+    select: { business: { select: { brandColor: true, category: true, visualStyle: true } } },
+  }).catch(() => null)
+  return { themeColor: booking ? businessThemeColor(booking.business) : '#f7f7f4' }
 }
 
 export default async function BookingConfirmationPage({ searchParams }: BookingConfirmationPageProps) {
@@ -54,6 +68,11 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
           selfServiceCutoffHours: true,
           cancellationPolicy: true,
           cancellationReminderEnabled: true,
+          brandColor: true,
+          visualStyle: true,
+          category: true,
+          logoUrl: true,
+          profileImageUrl: true,
         },
       },
       service: true, serviceLines: { select: { position: true, name: true } },
@@ -158,7 +177,7 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
       iconColor: 'text-amber-500',
       iconBg: 'bg-amber-50',
       title: 'Verificando tu pago',
-      message: 'Mercado Pago está procesando el pago. Te confirmaremos por WhatsApp cuando se apruebe.',
+      message: 'Mercado Pago está procesando el pago. Vuelve a esta página para revisar el estado. Si dejaste tu email, intentaremos avisarte por correo.',
     },
     rejected: {
       icon: XCircle,
@@ -173,7 +192,7 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
       iconBg: 'bg-muted',
       title: 'Reserva pendiente de pago',
       message: booking.paymentMethod === BANK_TRANSFER_METHOD
-        ? 'Transferí el abono y avisanos con el botón de abajo para confirmar tu reserva.'
+        ? 'Transfiere el abono y avísanos con el botón de abajo para confirmar tu reserva.'
         // Coordinación manual: no hay checkout que "completar" — pedírselo la
         // mandaría a buscar un botón de pago que no existe.
         : booking.paymentMethod === MANUAL_COORDINATION_METHOD
@@ -206,15 +225,15 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
       // Manual: acá nadie podía "completar" un pago — el negocio no confirmó
       // el abono dentro de la ventana. Mismo motivo que el email del cron.
       message: booking.paymentMethod === MANUAL_COORDINATION_METHOD
-        ? 'No se llegó a coordinar el abono a tiempo y el horario se liberó. Podés reservar de nuevo.'
-        : 'No se completó el pago a tiempo y el horario se liberó. Podés reservar de nuevo.',
+        ? 'No se llegó a coordinar el abono a tiempo y el horario se liberó. Puedes reservar de nuevo.'
+        : 'No se completó el pago a tiempo y el horario se liberó. Puedes reservar de nuevo.',
     },
     cancelled: {
       icon: XCircle,
       iconColor: 'text-muted-foreground',
       iconBg: 'bg-muted',
       title: 'Reserva cancelada',
-      message: 'Esta reserva fue cancelada. Si transferiste y no fue reconocido, contactá al negocio.',
+      message: 'Esta reserva fue cancelada. Si transferiste y no fue reconocido, contacta al negocio.',
     },
   }
 
@@ -225,15 +244,23 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
         ...stateConfig.confirmed,
         title: 'Gracias por tu visita',
         message: booking.remainingBalance > 0
-          ? `Quedó un saldo pendiente de ${formatMoney(booking.remainingBalance, currency)}. Podés pagarlo por transferencia acá abajo.`
+          ? `Quedó un saldo pendiente de ${formatMoney(booking.remainingBalance, currency)}. Puedes pagarlo por transferencia aquí abajo.`
           : '¡Te esperamos la próxima!',
       }
     : stateConfig[state]
   const Icon = config.icon
 
   return (
-    <main className="studio-shell min-h-screen px-4 py-8 md:py-12">
+    <BusinessTheme business={booking.business}>
+    <main className="studio-shell min-h-screen px-4 pb-8 md:pb-12">
       <section className="mx-auto max-w-lg">
+        <header className="mb-8 flex min-h-16 items-center justify-between border-b border-border py-3">
+          <div className="flex min-w-0 items-center gap-3">
+            {booking.business.logoUrl || booking.business.profileImageUrl ? <Image src={booking.business.logoUrl || booking.business.profileImageUrl!} alt="" width={44} height={44} unoptimized className="size-11 rounded-lg border border-border object-cover" /> : <span className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-secondary font-semibold text-primary" aria-hidden="true">{booking.business.name.slice(0, 1).toUpperCase()}</span>}
+            <span className="truncate font-heading font-semibold text-primary">{booking.business.name}</span>
+          </div>
+          <span className="shrink-0 text-sm font-semibold text-muted-foreground">Paso 6 de 6</span>
+        </header>
         <div className="mb-8 text-center">
           <div className={`mx-auto mb-6 flex size-16 items-center justify-center rounded-full ${config.iconBg}`}>
             <Icon className={`size-8 ${config.iconColor}`} />
@@ -363,7 +390,7 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
 
         {balance.rejected && balance.canDeclare && (
           <p className="mb-4 text-center text-sm text-muted-foreground">
-            Tu último aviso no pudo verificarse. Podés volver a avisar cuando quieras.
+            Tu último aviso no pudo verificarse. Puedes volver a avisar cuando quieras.
           </p>
         )}
 
@@ -382,7 +409,7 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
           <div className="studio-card mb-8 p-5 text-center">
             <p className="text-sm font-medium text-primary">Saldo en verificación</p>
             <p className="mt-1 text-sm text-muted-foreground">
-              Avisaste una transferencia de {formatMoney(balance.payment.amount, currency)}. El negocio la va a revisar; si pasan varios días, escribile.
+              Avisaste una transferencia de {formatMoney(balance.payment.amount, currency)}. El negocio la va a revisar; si pasan varios días, escríbele.
             </p>
             {balance.payment.hasProof && (
               <p className="mt-2 text-sm font-medium text-green-700">Comprobante adjuntado ✓</p>
@@ -392,7 +419,7 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
 
         {balance.partial && (
           <p className="mb-8 text-center text-sm text-muted-foreground">
-            Tu transferencia fue registrada parcialmente. Escribile al negocio para coordinar el resto.
+            Tu transferencia fue registrada parcialmente. Escríbele al negocio para coordinar el resto.
           </p>
         )}
 
@@ -415,8 +442,8 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
             {booking.depositPaid === 0 && state === 'pending' && (
               <p className="text-center text-sm text-muted-foreground">
                 {booking.paymentMethod === MANUAL_COORDINATION_METHOD
-                  ? 'Cuando el negocio confirme el abono, te llega la confirmación.'
-                  : 'Al completar el pago, recibirás una confirmación por WhatsApp.'}
+                  ? 'Cuando el negocio confirme el abono, vuelve a esta página para revisar el estado. Si dejaste tu email, intentaremos avisarte por correo.'
+                  : 'Completa el pago y vuelve a esta página para revisar el estado. Si dejaste tu email, intentaremos avisarte por correo.'}
               </p>
             )}
           </div>
@@ -436,5 +463,6 @@ export default async function BookingConfirmationPage({ searchParams }: BookingC
         {state === 'confirmed' && <InstallAppBanner canonicalOrigin={getAppUrl('')} />}
       </section>
     </main>
+    </BusinessTheme>
   )
 }

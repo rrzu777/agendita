@@ -51,7 +51,7 @@ describe('StepConfirmation cancellation warning', () => {
       <StepConfirmation {...common} data={base} cancellationCutoffHours={24} depositRequired={5_000} depositPaid={0} />,
     )
 
-    const warning = 'Podés cancelar o reprogramar hasta 24 horas antes. Con menos anticipación, el abono no se devuelve. Para cancelaciones anteriores aplica la política del negocio.'
+    const warning = 'Puedes cancelar o reprogramar hasta 24 horas antes. Con menos anticipación, el abono no se devuelve. Para cancelaciones anteriores aplica la política del negocio.'
     expect(html).toContain(warning)
     expect(html).toContain('bg-amber')
     expect(html.indexOf(warning)).toBeLessThan(html.indexOf('No llegar más de 10 minutos tarde.'))

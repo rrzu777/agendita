@@ -31,6 +31,8 @@ describe('combined calendar availability', () => {
     act(() => day.click())
     expect(choose).toHaveBeenCalledWith(new Date('2026-09-15T15:00:00Z'))
     expect(host.querySelector<HTMLButtonElement>('[aria-label="Mes siguiente"]')!.disabled).toBe(true)
+    expect(host.querySelector<HTMLButtonElement>('[aria-label="Mes anterior"]')!.className).toContain('size-11')
+    expect(host.querySelector<HTMLButtonElement>('[aria-label="Mes siguiente"]')!.className).toContain('size-11')
   })
   it('shows errors as retryable, not as no availability', async () => {
     preview.mockResolvedValue({ ok: false, error: 'Error de conexión' })

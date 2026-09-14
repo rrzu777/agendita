@@ -45,6 +45,11 @@ describe('getBusinessPublicUrl', () => {
 })
 
 describe('public acquisition navigation', () => {
+  it('preserves one bounded service preselection without forwarding duplicates', async () => {
+    const { publicAcquisitionSearch } = await load()
+    expect(publicAcquisitionSearch({ service: 'svc-1', email: 'private@example.test' })).toBe('service=svc-1')
+    expect(publicAcquisitionSearch({ service: ['svc-1', 'svc-2'] })).toBe('')
+  })
   it('preserves one bounded professional preference, never duplicate or unsafe values', async () => {
     const { publicAcquisitionSearch } = await load()
     expect(publicAcquisitionSearch({ professional: 'ana-1', email: 'private@example.test' })).toBe('professional=ana-1')

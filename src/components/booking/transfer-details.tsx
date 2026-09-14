@@ -7,7 +7,7 @@ import type { BankTransferPublicInfo } from '@/lib/bank-transfer/public-info'
 import { isAllowedProofType, PROOF_MAX_BYTES } from '@/lib/storage/proof'
 import { createProofUploadUrl } from '@/server/actions/bank-transfer-public'
 
-/** Datos bancarios + adjuntar comprobante + botón "Ya transferí". Cliente: sube
+/** Datos bancarios + adjuntar comprobante + botón "Ya transferí". La clienta sube
  *  el archivo directo a R2 (presign PUT) y pasa la key al handler de declarar.
  *  Lo usan el paso de pago del wizard y el panel de /book/confirmation. */
 export function TransferDetails({
@@ -91,7 +91,7 @@ export function TransferDetails({
     <div className="space-y-4">
       <div className="rounded-2xl bg-muted/55 p-5">
         <p className="mb-3 text-sm text-muted-foreground">
-          Transferí el {kind === 'balance' ? 'saldo' : 'abono'} de <span className="font-semibold text-primary">{formatMoney(amount, currency)}</span> a esta cuenta:
+          Transfiere el {kind === 'balance' ? 'saldo' : 'abono'} de <span className="font-semibold text-primary">{formatMoney(amount, currency)}</span> a esta cuenta:
         </p>
         <div className="space-y-2 text-sm">
           {rows.map(([label, value]) => (
@@ -108,7 +108,7 @@ export function TransferDetails({
 
       {deadlinePhrase && (
         <p className="text-sm text-muted-foreground">
-          Tenés hasta <span className="font-semibold text-primary">{deadlinePhrase}</span> para
+          Tienes hasta <span className="font-semibold text-primary">{deadlinePhrase}</span> para
           transferir y avisarnos. Si no recibimos el pago, la reserva puede vencer.
         </p>
       )}
