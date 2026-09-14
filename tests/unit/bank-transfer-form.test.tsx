@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { BankTransferForm } from '@/app/dashboard/settings/payments/bank-transfer-form'
 import { GuardedLink, UnsavedChangesProvider } from '@/components/dashboard/unsaved-changes-provider'
 import { writeSettingsDraft } from '@/lib/business/settings-draft'
+import { flushPromises } from '../helpers/react-dom'
 
 const { mockSaveBankTransferAccount, mockPush, mockVerifySettingsDraftBaseline } = vi.hoisted(() => ({
   mockSaveBankTransferAccount: vi.fn(),
@@ -284,6 +285,7 @@ describe('BankTransferForm unsaved bank details', () => {
         </UnsavedChangesProvider>,
       )
     })
+    await flushPromises()
 
     expect(container.textContent).toContain(recovery === 'restored' ? 'Recuperamos un borrador local' : 'Hay un borrador local de una versión anterior')
   })

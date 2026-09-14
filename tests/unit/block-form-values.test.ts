@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { deriveBlockFormValues, resolveBlockFormInterval } from '@/lib/calendar/block-form-values'
+import {
+  deriveBlockFormValues,
+  localDateDaySpan,
+  resolveBlockFormInterval,
+  shiftLocalDate,
+} from '@/lib/calendar/block-form-values'
 
 describe('deriveBlockFormValues', () => {
   it('convierte un bloqueo UTC a fecha/hora local del negocio', () => {
@@ -63,5 +68,14 @@ describe('deriveBlockFormValues', () => {
     const interval = resolveBlockFormInterval(block, values, 'America/Santiago')
     expect(interval.start.toISOString()).toBe(block.startDateTime)
     expect(interval.end.toISOString()).toBe(block.endDateTime)
+  })
+
+  it('permite mover la fecha de inicio conservando la duración de calendario del bloqueo', () => {
+    expect(localDateDaySpan('2026-06-01', '2026-06-01')).toBe(0)
+    expect(localDateDaySpan('2026-06-01', '2026-06-02')).toBe(1)
+    expect(shiftLocalDate('2026-06-01', 0)).toBe('2026-06-01')
+    expect(shiftLocalDate('2026-06-01', 1)).toBe('2026-06-02')
+    expect(shiftLocalDate('2026-12-31', 1)).toBe('2027-01-01')
+    expect(shiftLocalDate('', 1)).toBe('')
   })
 })

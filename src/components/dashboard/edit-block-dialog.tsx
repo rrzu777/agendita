@@ -12,7 +12,12 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { updateTimeBlock, deleteTimeBlock } from '@/server/actions/time-blocks'
-import { deriveBlockFormValues, resolveBlockFormInterval } from '@/lib/calendar/block-form-values'
+import {
+  deriveBlockFormValues,
+  localDateDaySpan,
+  resolveBlockFormInterval,
+  shiftLocalDate,
+} from '@/lib/calendar/block-form-values'
 import { BlockFormFields } from './block-form-fields'
 import type { CalendarTimeBlock } from './time-block-card'
 
@@ -26,8 +31,10 @@ interface EditBlockDialogProps {
 
 export function EditBlockDialog({ block, timezone, open, onOpenChange, onCloseAutoFocus }: EditBlockDialogProps) {
   const initial = deriveBlockFormValues(block, timezone)
+  const initialDaySpan = localDateDaySpan(initial.date, initial.endDate)
   const [date, setDate] = useState(initial.date)
   const [endDate, setEndDate] = useState(initial.endDate)
+  const [endDateTouched, setEndDateTouched] = useState(false)
   const [startTime, setStartTime] = useState(initial.startTime)
   const [endTime, setEndTime] = useState(initial.endTime)
   const [reason, setReason] = useState(initial.reason)
@@ -37,6 +44,18 @@ export function EditBlockDialog({ block, timezone, open, onOpenChange, onCloseAu
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
+
+  function handleDateChange(nextDate: string) {
+    setDate(nextDate)
+    // Cambiar solo el inicio mueve el bloqueo completo. La dueña puede
+    // desactivar esta sincronización editando explícitamente "Fecha fin".
+    if (!endDateTouched) setEndDate(nextDate ? shiftLocalDate(nextDate, initialDaySpan) : '')
+  }
+
+  function handleEndDateChange(nextEndDate: string) {
+    setEndDateTouched(true)
+    setEndDate(nextEndDate)
+  }
 
   function handleOpenChange(newOpen: boolean) {
     if (!newOpen) {
@@ -138,9 +157,9 @@ export function EditBlockDialog({ block, timezone, open, onOpenChange, onCloseAu
             <form onSubmit={handleSubmit} className="space-y-4">
               <BlockFormFields
                 date={date}
-                onDateChange={setDate}
+                onDateChange={handleDateChange}
                 endDate={endDate}
-                onEndDateChange={setEndDate}
+                onEndDateChange={handleEndDateChange}
                 startTime={startTime}
                 onStartTimeChange={setStartTime}
                 endTime={endTime}

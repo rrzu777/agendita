@@ -455,7 +455,7 @@ test.describe('reservation actions and truthful calendar intervals', () => {
         { name: 'Completada prueba', status: 'completed', primary: null },
         { name: 'Ausencia prueba', status: 'no_show', primary: null },
         { name: 'Completada con saldo prueba', status: 'completed', primary: 'Cobrar', unpaid: true },
-        { name: 'Plazo vencido prueba', status: 'pending_payment', primary: 'Cobrar', unpaid: true, stale: true },
+        { name: 'Plazo vencido prueba', status: 'pending_payment', primary: null, unpaid: true, stale: true },
       ]
       for (const [index, state] of states.entries()) {
         await booking(state.name, `${String(index + 9).padStart(2, '0')}:00`, `${String(index + 9).padStart(2, '0')}:30`, {
@@ -476,6 +476,10 @@ test.describe('reservation actions and truthful calendar intervals', () => {
           await expect(primary).toBeVisible()
           if (state.stale) await expect(primary).toBeDisabled()
           else await expect(primary).toBeEnabled()
+        }
+        if (state.stale) {
+          await expect(row).toContainText('Venció el plazo para pagar')
+          await expect(actions.getByRole('button', { name: 'Cobrar', exact: true })).toHaveCount(0)
         }
         await actions.getByRole('button', { name: 'Más acciones', exact: true }).click()
         const menu = page.getByRole('menu')

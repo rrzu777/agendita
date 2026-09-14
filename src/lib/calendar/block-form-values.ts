@@ -1,4 +1,5 @@
 import { formatInTimeZone } from 'date-fns-tz'
+import { addDays, differenceInCalendarDays, format, isValid, parseISO } from 'date-fns'
 import { localDateTimeToUtc } from '@/lib/availability/timezone'
 
 export interface BlockFormValues {
@@ -9,6 +10,22 @@ export interface BlockFormValues {
   reason: string
   /** Tolerancia de solape en minutos, como string para el input numérico. */
   overlapTolerance: string
+}
+
+/** Aritmética de fechas del formulario, sin convertir una fecha local en un
+ * instante UTC. Las fechas vienen del control de calendario y representan días
+ * del negocio, no medianoches del navegador. */
+export function shiftLocalDate(localDate: string, days: number): string {
+  const parsed = parseISO(localDate)
+  if (!isValid(parsed) || !Number.isInteger(days)) return ''
+  return format(addDays(parsed, days), 'yyyy-MM-dd')
+}
+
+export function localDateDaySpan(startDate: string, endDate: string): number {
+  const start = parseISO(startDate)
+  const end = parseISO(endDate)
+  if (!isValid(start) || !isValid(end)) return 0
+  return differenceInCalendarDays(end, start)
 }
 
 export function deriveBlockFormValues(
