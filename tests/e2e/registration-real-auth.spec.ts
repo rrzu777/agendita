@@ -27,7 +27,7 @@ test.describe('real Supabase registration', () => {
       await page.goto('/register')
       await page.getByLabel('Nombre').fill('Registro E2E descartable')
       await page.getByLabel('Email').fill(email)
-      await page.getByLabel('Contraseña').fill(password)
+      await page.getByLabel(/^Contraseña\s*\*?$/).fill(password)
       await page.locator('select[name="category"]').selectOption('nails')
       await page.locator('input[name="useServiceTemplate"]').check()
       await page.locator('#accept-terms').check()
@@ -85,7 +85,7 @@ test.describe('real Supabase registration', () => {
 
       await page.goto('/login')
       await page.getByLabel('Email').fill(email)
-      await page.getByLabel('Contraseña').fill(password)
+      await page.getByLabel(/^Contraseña\s*\*?$/).fill(password)
       await page.getByRole('button', { name: 'Iniciar sesión' }).click()
       await page.waitForURL('**/dashboard/onboarding')
       await expect(page.getByRole('heading', { name: 'Configura tu negocio' })).toBeVisible()

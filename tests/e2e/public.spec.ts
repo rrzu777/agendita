@@ -50,10 +50,10 @@ test.describe('public pages', () => {
 
   test('landing page has navigation', async ({ page }) => {
     await page.goto('/')
-    const bodyText = await page.locator('body').innerText()
-    expect(bodyText).toContain('Reservas')
-    expect(bodyText).toContain('Crear cuenta')
-    expect(bodyText).toContain('Iniciar sesión')
+    await expect(page.getByRole('link', { name: 'Para negocios' })).toHaveAttribute('href', '/login')
+    await expect(page.getByRole('link', { name: 'Soy cliente' })).toHaveAttribute('href', '/ingresar')
+    await expect(page.getByRole('link', { name: 'Crear cuenta' })).toHaveAttribute('href', '/register')
+    await expect(page.getByRole('link', { name: 'Iniciar sesión' })).toHaveAttribute('href', '/login')
   })
 
   test('book page lists businesses', async ({ page }) => {

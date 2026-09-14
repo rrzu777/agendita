@@ -381,7 +381,7 @@ test.describe('self-service: recordatorios push', () => {
 
     await gotoStable(page, '/notificaciones')
 
-    await expect(page.getByText(/iniciá sesión/)).toBeVisible()
+    await expect(page.getByText('Para activar recordatorios, inicia sesión o vuelve desde la confirmación de una reserva elegible.')).toBeVisible()
     await expect(page.getByRole('link', { name: 'Iniciar sesión' })).toHaveAttribute(
       'href',
       '/ingresar?next=/notificaciones',
@@ -490,7 +490,7 @@ test.describe('self-service: recordatorios push', () => {
     ])
 
     await page.getByRole('button', { name: 'Desactivar recordatorios' }).click()
-    await expect(page.getByText(/iniciá sesión/)).toBeVisible()
+    await expect(page.getByText('Para activar recordatorios, inicia sesión o vuelve desde la confirmación de una reserva elegible.')).toBeVisible()
 
     const afterDeactivate = await page.evaluate(() => (
       window as unknown as { __pushReloadE2E: { unsubscribeCalls: number } }

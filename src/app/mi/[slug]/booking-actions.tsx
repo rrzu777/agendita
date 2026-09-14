@@ -42,6 +42,7 @@ export function BookingActions({
   const [error, setError] = useState('')
   const cancelTriggerRef = useRef<HTMLButtonElement>(null)
   const keepBookingRef = useRef<HTMLButtonElement>(null)
+  const successfulCancellationRef = useRef<{ serviceName: string; startsAtLabel: string } | null>(null)
 
   if (!canManage) {
     return (
@@ -58,9 +59,8 @@ export function BookingActions({
           setError(res.error)
           return
         }
-        announceCancellation?.({ serviceName, startsAtLabel })
+        successfulCancellationRef.current = { serviceName, startsAtLabel }
         setConfirming(false)
-        router.refresh()
       } catch {
         setError('No se pudo cancelar')
       }
@@ -80,7 +80,7 @@ export function BookingActions({
           <AlertDialog open={confirming} onOpenChange={(open) => {
             if (pending) return
             setConfirming(open)
-            if (!open) window.setTimeout(() => cancelTriggerRef.current?.focus(), 0)
+            if (!open && !successfulCancellationRef.current) window.setTimeout(() => cancelTriggerRef.current?.focus(), 0)
           }}>
             <AlertDialogTrigger asChild>
               <button ref={cancelTriggerRef} type="button" className="min-h-11 rounded-lg px-3 text-muted-foreground hover:bg-secondary hover:text-primary">
@@ -89,6 +89,14 @@ export function BookingActions({
             </AlertDialogTrigger>
             <AlertDialogContent
               onOpenAutoFocus={(event) => { event.preventDefault(); keepBookingRef.current?.focus() }}
+              onCloseAutoFocus={(event) => {
+                const notice = successfulCancellationRef.current
+                if (!notice) return
+                event.preventDefault()
+                successfulCancellationRef.current = null
+                announceCancellation?.(notice)
+                router.refresh()
+              }}
             >
               <AlertDialogHeader>
                 <AlertDialogTitle>Cancelar {serviceName}</AlertDialogTitle>

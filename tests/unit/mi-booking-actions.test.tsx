@@ -128,6 +128,9 @@ describe('BookingActions', () => {
     await act(async () => {
       confirm.click()
       await Promise.resolve()
+    })
+    // Flush Radix's deferred close-autofocus after React commits the closure.
+    await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
 

@@ -85,7 +85,7 @@ export async function loginWithCredentials(
   await page.waitForLoadState('networkidle')
 
   await page.getByLabel('Email').fill(email)
-  await page.getByLabel('Contraseña').fill(password)
+  await page.getByLabel(/^Contraseña\s*\*?$/).fill(password)
   await page.getByRole('button', { name: 'Iniciar sesión' }).click()
 
   try {
@@ -118,7 +118,7 @@ export async function registerBusiness(
 
   await page.getByLabel('Nombre').fill(opts.name)
   await page.getByLabel('Email').fill(opts.email)
-  await page.getByLabel('Contraseña').fill(opts.password)
+  await page.getByLabel(/^Contraseña\s*\*?$/).fill(opts.password)
 
   if (opts.category && opts.category !== 'other') {
     await page.locator('select[name="category"]').selectOption(opts.category)
