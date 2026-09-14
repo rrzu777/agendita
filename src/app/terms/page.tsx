@@ -1,10 +1,12 @@
+import { LegalShell } from '@/components/platform/platform-shell'
+
 export default function TermsPage() {
   return (
-    <div className="mx-auto max-w-3xl px-6 py-16">
+    <LegalShell><article>
       <h1 className="mb-8 text-4xl font-semibold tracking-normal text-primary">Términos y Condiciones</h1>
 
-      <div className="prose prose-stone max-w-none space-y-6 text-sm leading-relaxed text-muted-foreground">
-        <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4 text-sm text-yellow-800">
+      <div className="prose max-w-none space-y-6 text-sm leading-relaxed text-muted-foreground prose-headings:text-primary prose-strong:text-foreground prose-li:marker:text-muted-foreground">
+        <div className="rounded-lg border border-warning/30 bg-warning/10 p-4 text-sm text-warning">
           <strong>Borrador para revisión legal.</strong> Este documento es un borrador base. Debe ser revisado y ajustado por un abogado antes de su uso con clientes reales.
         </div>
 
@@ -104,6 +106,6 @@ export default function TermsPage() {
           Última actualización: Agosto 2026. Versión borrador para revisión legal.
         </p>
       </div>
-    </div>
+    </article></LegalShell>
   )
 }

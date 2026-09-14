@@ -2,16 +2,17 @@
 
 import { Button } from '@/components/ui/button'
 import { AlertTriangle } from 'lucide-react'
+import { MarketingShell } from '@/components/platform/platform-shell'
 
 export default function Error({
   error,
-  reset,
+  retry,
 }: {
-  error: string & { digest?: string }
-  reset: () => void
+  error: Error & { digest?: string }
+  retry: () => void
 }) {
   return (
-    <div className="studio-shell flex flex-col items-center justify-center py-20">
+    <MarketingShell><main className="flex min-h-[calc(100vh-4rem)] flex-col items-center justify-center px-4 py-20">
       <AlertTriangle className="mb-4 size-12 text-destructive" />
       <h1 className="mb-2 text-2xl font-semibold text-primary">Algo salió mal</h1>
       <p className="mb-6 max-w-sm text-center text-muted-foreground">
@@ -22,9 +23,9 @@ export default function Error({
           {error.digest}
         </code>
       )}
-      <Button onClick={reset} className="rounded-lg font-semibold">
+      <Button onClick={retry} size="touch" className="rounded-lg font-semibold">
         Reintentar
       </Button>
-    </div>
+    </main></MarketingShell>
   )
 }

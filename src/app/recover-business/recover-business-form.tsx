@@ -36,9 +36,9 @@ export function RecoverBusinessForm({ email, name }: RecoverBusinessFormProps) {
   }
 
   return (
-    <Card className="w-full max-w-md">
+    <Card className="w-full max-w-md border-border shadow-sm">
       <CardHeader>
-        <CardTitle>Recuperar negocio</CardTitle>
+        <CardTitle><h1>Recuperar negocio</h1></CardTitle>
         <CardDescription>
           Parece que tu cuenta no tiene un negocio asociado. Esto puede pasar si tu cuenta se
           creó correctamente pero hubo un problema al configurar tu negocio. Podemos intentar
@@ -57,13 +57,14 @@ export function RecoverBusinessForm({ email, name }: RecoverBusinessFormProps) {
         </p>
 
         {error && (
-          <div className="rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
+          <div role="alert" className="rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
             {error}
           </div>
         )}
 
         <Button
           type="button"
+          size="touch"
           className="w-full"
           onClick={handleRecover}
           disabled={isPending}

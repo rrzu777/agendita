@@ -9,48 +9,46 @@ import { getAccountCta, getFunnelSession } from '@/lib/customers/session-prefill
 import { prisma } from '@/lib/db'
 import { appendPublicAcquisitionSearch } from '@/lib/business/urls'
 import { CalendarCheck, Wallet, Bell } from 'lucide-react'
+import { MarketingShell } from '@/components/platform/platform-shell'
+import type { Metadata } from 'next'
 
 const features = [
-  { icon: CalendarCheck, title: 'Reservas 24/7', text: 'Tus clientes eligen hora desde su teléfono, sin esperar tu respuesta.' },
-  { icon: Wallet, title: 'Abonos al instante', text: 'Cobra una seña al reservar y reduce las inasistencias.' },
-  { icon: Bell, title: 'Confirmación automática', text: 'Cada reserva queda confirmada y registrada, sin perseguir mensajes.' },
+  { icon: CalendarCheck, title: 'Reserva online', text: 'Tus clientes eligen servicios y horarios disponibles desde su teléfono.' },
+  { icon: Wallet, title: 'Cobros configurables', text: 'Ofrece los métodos de pago y condiciones de abono que realmente usa tu negocio.' },
+  { icon: Bell, title: 'Seguimiento claro', text: 'Consulta el estado de cada reserva y configura los recordatorios disponibles.' },
 ]
 
 function LandingPage() {
   return (
-    <div className="studio-shell relative overflow-hidden">
-      {/* Soft warm atmosphere */}
-      <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
-        <div className="absolute -top-32 left-1/2 size-[42rem] -translate-x-1/2 rounded-full bg-secondary/50 blur-3xl" />
-        <div className="absolute -bottom-40 -left-24 size-96 rounded-full bg-accent/40 blur-3xl" />
-      </div>
-
-      <main className="container mx-auto px-4 py-20 sm:py-28">
-        <div className="mx-auto max-w-3xl text-center">
-          <p className="studio-eyebrow mb-4">Agenda boutique para belleza y barbería</p>
+    <MarketingShell>
+      <main className="mx-auto w-full max-w-6xl px-4 py-16 sm:px-6 sm:py-24">
+        <div className="grid items-end gap-10 border-b border-border pb-14 lg:grid-cols-[minmax(0,1.35fr)_minmax(300px,.65fr)]">
+          <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Agenda para negocios de servicios</p>
           <h1 className="mb-6 font-heading text-5xl font-semibold tracking-tight text-primary md:text-7xl">
-            Reservas online para tu estudio
+            Tu agenda, clara para ti y simple para tus clientes.
           </h1>
-          <p className="mx-auto mb-10 max-w-2xl text-xl leading-relaxed text-muted-foreground">
-            Deja que tus clientes reserven hora, paguen el abono y reciban confirmación —
-            sin perseguir mensajes por WhatsApp.
+          <p className="mb-10 max-w-2xl text-lg leading-relaxed text-muted-foreground sm:text-xl">
+            Organiza servicios, profesionales, horarios, cobros y reservas desde un mismo lugar. La experiencia pública conserva la identidad de cada negocio.
           </p>
           <div className="flex flex-col justify-center gap-3 sm:flex-row">
-            <Link href="/register" className="inline-block rounded-full bg-primary px-8 py-3.5 font-semibold text-primary-foreground shadow-[0_14px_32px_rgba(51,41,32,0.18)] transition hover:bg-primary/90">
-              Crear cuenta gratis
+            <Link href="/register" className="flex min-h-12 items-center justify-center rounded-xl bg-primary px-8 font-semibold text-primary-foreground transition hover:bg-primary/90">
+              Crear cuenta
             </Link>
-            <Link href="/login" className="inline-block rounded-full border border-border bg-card px-8 py-3.5 font-semibold text-primary transition hover:bg-muted">
+            <Link href="/login" className="flex min-h-12 items-center justify-center rounded-xl border border-border bg-card px-8 font-semibold text-primary transition hover:bg-muted">
               Iniciar sesión
             </Link>
           </div>
+          </div>
+          <p className="max-w-sm border-l-2 border-primary pl-5 text-sm leading-relaxed text-muted-foreground">Belleza, barbería, terapia y otros servicios comparten la misma operación. El estilo visual lo decide cada negocio.</p>
         </div>
 
-        <div className="mx-auto mt-20 grid max-w-4xl gap-4 sm:grid-cols-3">
+        <div className="mt-12 grid gap-px overflow-hidden rounded-2xl border border-border bg-border sm:grid-cols-3">
           {features.map((feature) => {
             const Icon = feature.icon
             return (
-              <div key={feature.title} className="rounded-[1.75rem] border border-border/50 bg-card/70 p-6 text-left shadow-[var(--cream-shadow)] backdrop-blur">
-                <div className="mb-4 flex size-12 items-center justify-center rounded-2xl bg-secondary text-primary">
+              <div key={feature.title} className="bg-card p-6 text-left sm:p-7">
+                <div className="mb-5 flex size-12 items-center justify-center rounded-xl bg-secondary text-primary">
                   <Icon className="size-6" />
                 </div>
                 <h2 className="mb-1.5 font-heading text-lg font-semibold tracking-tight text-primary">{feature.title}</h2>
@@ -60,8 +58,19 @@ function LandingPage() {
           })}
         </div>
       </main>
-    </div>
+    </MarketingShell>
   )
+}
+
+export async function generateMetadata(): Promise<Metadata> {
+  const tenant = await getTenantFromRequest()
+  if (!tenant) return {}
+  const business = await getPublicBusinessBySubdomain(tenant.subdomain)
+  if (!business) return {}
+  return {
+    title: business.name,
+    description: `Reserva servicios y revisa la información de ${business.name}.`,
+  }
 }
 
 export default async function HomePage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {

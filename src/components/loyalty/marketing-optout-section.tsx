@@ -16,12 +16,17 @@ export function MarketingOptOutSection({
 }) {
   const [isPending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
+  const [currentOptedOut, setCurrentOptedOut] = useState(optedOut)
+  const [saved, setSaved] = useState(false)
 
   function submit(next: boolean) {
     setError(null)
+    setSaved(false)
     startTransition(async () => {
       try {
         await action(next)
+        setCurrentOptedOut(next)
+        setSaved(true)
       } catch {
         setError('No se pudo guardar')
       }
@@ -29,15 +34,16 @@ export function MarketingOptOutSection({
   }
 
   return (
-    <div className="mt-8 text-center text-sm text-muted-foreground">
-      {optedOut ? (
+    <div className="mt-5 text-sm text-muted-foreground">
+      {currentOptedOut ? (
         <>
           <p>No recibirás promociones de {businessName}.</p>
           <button
             type="button"
-            className="mt-1 font-semibold text-pink-700 hover:underline disabled:opacity-50"
+            className="mt-2 min-h-11 rounded-lg px-2 font-semibold text-primary hover:bg-secondary disabled:opacity-50"
             onClick={() => submit(false)}
             disabled={isPending}
+            aria-busy={isPending}
           >
             Volver a recibirlas
           </button>
@@ -45,14 +51,16 @@ export function MarketingOptOutSection({
       ) : (
         <button
           type="button"
-          className="hover:underline disabled:opacity-50"
+          className="min-h-11 rounded-lg px-2 text-left hover:bg-secondary hover:text-primary disabled:opacity-50"
           onClick={() => submit(true)}
           disabled={isPending}
+          aria-busy={isPending}
         >
           No quiero recibir promociones de {businessName}
         </button>
       )}
-      {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
+      {saved && <p role="status" className="mt-2 text-xs text-success">Preferencia guardada.</p>}
+      {error && <p role="alert" className="mt-1 text-xs text-destructive">{error}</p>}
     </div>
   )
 }

@@ -29,19 +29,23 @@ export function ReviewForm({ bookingId, token }: ReviewFormProps) {
     setLoading(true)
     setError(null)
 
-    const res = await submitReview({
-      bookingId,
-      token,
-      rating,
-      comment: comment.trim() || null,
-    })
-    if (!res.ok) {
-      setError(res.error)
+    try {
+      const res = await submitReview({
+        bookingId,
+        token,
+        rating,
+        comment: comment.trim() || null,
+      })
+      if (!res.ok) {
+        setError(res.error)
+        return
+      }
+      setSuccess(true)
+    } catch {
+      setError('No pudimos enviar tu reseña. Intenta nuevamente.')
+    } finally {
       setLoading(false)
-      return
     }
-    setSuccess(true)
-    setLoading(false)
   }
 
   if (success) {
@@ -57,9 +61,9 @@ export function ReviewForm({ bookingId, token }: ReviewFormProps) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="mt-6 space-y-5">
+    <form onSubmit={handleSubmit} noValidate className="mt-6 space-y-5">
       <fieldset>
-        <legend className="studio-eyebrow mb-2 block">Calificación</legend>
+        <legend className="mb-2 block text-sm font-semibold text-primary">Calificación <span className="text-muted-foreground">(requerida)</span></legend>
         <div className="flex gap-1">
           {[1, 2, 3, 4, 5].map((star) => (
             <button

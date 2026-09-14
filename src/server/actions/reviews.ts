@@ -51,17 +51,29 @@ export type BookingForReviewLink = {
 
 export type ReviewRequestInfo = {
   businessName: string
+  business: {
+    name: string
+    slug: string
+    logoUrl: string | null
+    brandColor: string | null
+    visualStyle: 'soft' | 'balanced' | 'contrast'
+    category: 'nails' | 'beauty' | 'hair_salon' | 'barber' | 'massage' | 'therapy' | 'other'
+  }
   serviceName: string
   bookingDate: Date
   bookingId: string
   alreadyReviewed: boolean
 }
 
+export type ReviewRequestUnavailable = Pick<ReviewRequestInfo, 'businessName' | 'business'> & {
+  unavailableReason: string
+}
+
 export async function getReviewRequest(bookingId: string, token: string) {
   const booking = await prisma.booking.findUnique({
     where: { id: bookingId },
     include: {
-      business: { select: { name: true } },
+      business: { select: { name: true, slug: true, logoUrl: true, brandColor: true, visualStyle: true, category: true } },
       service: { select: { name: true } }, serviceLines: { select: { position: true, name: true } },
       review: true,
     },
@@ -72,13 +84,17 @@ export async function getReviewRequest(bookingId: string, token: string) {
   }
 
   if (booking.status !== BookingStatus.completed) {
-    // SSR-only (page.tsx la llama en servidor): el throw llega al error boundary; no migrar a UserError
-    throw new Error('Esta reserva aún no ha sido completada')
+    return {
+      businessName: booking.business.name,
+      business: booking.business,
+      unavailableReason: 'Esta reserva aún no ha sido completada',
+    } satisfies ReviewRequestUnavailable
   }
 
   if (booking.review) {
     return {
       businessName: booking.business.name,
+      business: booking.business,
       serviceName: bookingServiceName(booking),
       bookingDate: booking.startDateTime,
       bookingId: booking.id,
@@ -88,6 +104,7 @@ export async function getReviewRequest(bookingId: string, token: string) {
 
   return {
     businessName: booking.business.name,
+    business: booking.business,
     serviceName: bookingServiceName(booking),
     bookingDate: booking.startDateTime,
     bookingId: booking.id,

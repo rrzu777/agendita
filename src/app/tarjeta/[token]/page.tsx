@@ -9,8 +9,10 @@ import { setMarketingOptOutByToken } from '@/server/actions/marketing-optout'
 import { MarketingOptOutSection } from '@/components/loyalty/marketing-optout-section'
 import { PageMessage } from '@/components/ui/page-message'
 import { getVocabulary } from '@/lib/vocabulary'
+import { TenantPublicShell } from '@/components/client/client-shell'
+import { MarketingShell } from '@/components/platform/platform-shell'
 
-export const metadata: Metadata = { robots: { index: false, follow: false } }
+export const metadata: Metadata = { title: 'Mi tarjeta', robots: { index: false, follow: false } }
 
 // El token va bindeado server-side (no como hidden input): es la credencial del
 // carnet y no debe confiarse desde el body del form.
@@ -30,13 +32,14 @@ export default async function LoyaltyCardPage({ params }: { params: Promise<{ to
   const customer = await resolveLoyaltyCustomer(prisma, token)
 
   if (!customer) {
-    return <PageMessage title="Tarjeta no disponible" message="El enlace no es válido o ya no está activo." />
+    return <MarketingShell><PageMessage title="Tarjeta no disponible" message="El enlace no es válido o ya no está activo." /></MarketingShell>
   }
 
   const data = await loadLoyaltyCardData(customer)
 
   return (
-    <main className="mx-auto max-w-md px-4 py-10">
+    <TenantPublicShell business={customer.business} backHref={`/b/${customer.business.slug}`} backLabel="Volver al perfil" width="narrow">
+      <div>
       <LoyaltyCard
         customerName={customer.name}
         business={{ name: customer.business.name, logoUrl: customer.business.logoUrl }}
@@ -46,7 +49,7 @@ export default async function LoyaltyCardPage({ params }: { params: Promise<{ to
       />
       {!customer.userId && (
         <p className="mt-8 text-center text-sm">
-          <Link href={`/ingresar?next=/tarjeta/${token}/vincular`} className="font-semibold text-pink-700 hover:underline">
+          <Link href={`/ingresar?next=/tarjeta/${token}/vincular`} className="inline-flex min-h-11 items-center font-semibold text-primary underline underline-offset-4">
             Guardar mi tarjeta en mi cuenta
           </Link>
         </p>
@@ -56,6 +59,7 @@ export default async function LoyaltyCardPage({ params }: { params: Promise<{ to
         optedOut={customer.marketingOptOutAt != null}
         action={optOutAction.bind(null, token)}
       />
-    </main>
+      </div>
+    </TenantPublicShell>
   )
 }

@@ -35,7 +35,7 @@ export function BookingActions({
 
   if (!canManage) {
     return (
-      <p className="mt-1 text-xs text-gray-400">{selfServiceBlockedMessage(cutoffHours)}</p>
+      <p className="mt-2 text-xs text-muted-foreground">{selfServiceBlockedMessage(cutoffHours)}</p>
     )
   }
 
@@ -57,40 +57,40 @@ export function BookingActions({
   }
 
   return (
-    <div className="mt-2 flex flex-wrap items-center gap-3 text-sm">
+    <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
       {confirming ? (
         <>
-          <span className="text-gray-600">¿Cancelar esta reserva?</span>
+          <span className="w-full text-muted-foreground">¿Cancelar esta reserva?</span>
           <button
             type="button"
             onClick={handleCancel}
             disabled={pending}
-            className="font-semibold text-red-600 hover:underline disabled:opacity-50"
+            className="min-h-11 rounded-lg px-3 font-semibold text-destructive hover:bg-destructive/10 disabled:opacity-50"
           >
             {pending ? 'Cancelando…' : 'Sí, cancelar'}
           </button>
-          <button type="button" onClick={() => setConfirming(false)} disabled={pending} className="text-gray-500 hover:underline">
+          <button type="button" onClick={() => setConfirming(false)} disabled={pending} className="min-h-11 rounded-lg px-3 text-muted-foreground hover:bg-secondary">
             No
           </button>
         </>
       ) : (
         <>
           {!rescheduleBlockedReason && (
-            <Link href={`/mi/${slug}/reservas/${bookingId}/reprogramar`} className="font-semibold text-pink-700 hover:underline">
+            <Link href={`/mi/${slug}/reservas/${bookingId}/reprogramar`} className="flex min-h-11 items-center rounded-lg px-3 font-semibold text-primary hover:bg-secondary">
               Reprogramar
             </Link>
           )}
           {/* Cancelar se queda: sobre una reserva condenada es lo único que
               hace lo que dice, y libera el horario sin esperar al cron. */}
-          <button type="button" onClick={() => setConfirming(true)} className="text-gray-500 hover:underline">
+          <button type="button" onClick={() => setConfirming(true)} className="min-h-11 rounded-lg px-3 text-muted-foreground hover:bg-secondary hover:text-primary">
             Cancelar reserva
           </button>
           {rescheduleBlockedReason && (
-            <span className="w-full text-xs text-gray-400">{rescheduleBlockedReason}</span>
+            <span className="w-full text-xs text-muted-foreground">{rescheduleBlockedReason}</span>
           )}
         </>
       )}
-      {error && <span className="w-full text-xs text-red-600">{error}</span>}
+      {error && <span role="alert" className="w-full text-xs text-destructive">{error}</span>}
     </div>
   )
 }

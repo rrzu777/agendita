@@ -8,11 +8,13 @@ import { FormField } from '@/components/ui/form-field'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { signIn } from '@/lib/auth/actions'
-import { Eye, Loader2, Lock, Mail, Sparkles } from 'lucide-react'
+import { Eye, EyeOff, Loader2, Lock, Mail } from 'lucide-react'
+import { AuthShell } from '@/components/platform/platform-shell'
 
 export default function LoginPage() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -28,32 +30,25 @@ export default function LoginPage() {
       }
     } catch (err) {
       unstable_rethrow(err)
-      setError(err instanceof Error ? err.message : 'Error al iniciar sesión')
+      setError('No pudimos iniciar sesión. Revisa tu conexión e intenta nuevamente.')
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <main className="studio-shell flex items-center justify-center px-4 py-12">
-      <div className="w-full max-w-[440px]">
-        <div className="mb-10 text-center">
-          <h1 className="font-heading text-6xl font-semibold tracking-tight text-primary sm:text-7xl">Agendita</h1>
-          <p className="mt-3 text-xl text-muted-foreground">Agenda online para estudios boutique</p>
-        </div>
-
-        <Card className="studio-card w-full border-border/40 px-4 py-6 sm:px-8">
+    <AuthShell audience="owner">
+      <main className="mx-auto w-full max-w-[440px]">
+        <Card className="w-full border-border px-4 py-6 shadow-sm sm:px-8">
         <CardHeader className="px-0 text-left">
-          <div className="mb-2 flex size-11 items-center justify-center rounded-xl bg-secondary text-primary">
-            <Sparkles className="size-5" />
-          </div>
-          <CardTitle className="font-heading text-4xl font-semibold tracking-tight text-primary">Hola de nuevo</CardTitle>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Acceso para negocios</p>
+          <CardTitle className="font-heading text-3xl font-semibold tracking-tight text-primary"><h1>Iniciar sesión</h1></CardTitle>
           <CardDescription className="text-base text-muted-foreground">
             Ingresa tus datos para gestionar tus citas.
           </CardDescription>
         </CardHeader>
         <CardContent className="px-0">
-          <form onSubmit={handleSubmit} className="space-y-6">
+          <form onSubmit={handleSubmit} noValidate className="space-y-6">
             {error && (
               <div role="alert" className="rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
                 {error}
@@ -63,15 +58,15 @@ export default function LoginPage() {
               {(a11y) => <div className="relative"><Mail className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" /><Input className="pl-12" id="email" name="email" type="email" placeholder="ejemplo@correo.com" required density="touch" {...a11y} /></div>}
             </FormField>
             <div className="relative">
-              <Link href="/forgot-password" className="absolute right-0 top-0 z-10 text-sm font-semibold text-primary hover:underline">Olvidé mi contraseña</Link>
+              <Link href="/forgot-password" className="absolute -right-2 -top-3 z-10 inline-flex min-h-11 items-center px-2 text-sm font-semibold text-primary hover:underline">Olvidé mi contraseña</Link>
               <FormField id="password" label="Contraseña" required>
-                {(a11y) => <div className="relative"><Lock className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" /><Input className="px-12" id="password" name="password" type="password" placeholder="••••••••" required density="touch" {...a11y} /><Eye className="pointer-events-none absolute right-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" /></div>}
+                {(a11y) => <div className="relative"><Lock className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" /><Input className="px-12" id="password" name="password" type={showPassword ? 'text' : 'password'} placeholder="••••••••" required autoComplete="current-password" density="touch" {...a11y} /><button type="button" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'} aria-pressed={showPassword} className="absolute right-1 top-1/2 flex size-11 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground hover:bg-secondary hover:text-primary">{showPassword ? <EyeOff className="size-5" /> : <Eye className="size-5" />}</button></div>}
               </FormField>
             </div>
             <Button
               type="submit"
               size="touch"
-              className="w-full rounded-full font-semibold shadow-[0_14px_32px_rgba(51,41,32,0.18)]"
+              className="w-full rounded-full font-semibold shadow-sm"
               disabled={loading}
               data-auth-loading={loading ? 'true' : undefined}
               aria-busy={loading}
@@ -83,13 +78,13 @@ export default function LoginPage() {
           <div className="my-8 h-px bg-border/50" />
           <p className="text-center text-base text-muted-foreground">
             ¿No tienes cuenta?{' '}
-            <Link href="/register" className="font-semibold text-primary hover:underline">
+            <Link href="/register" className="inline-flex min-h-11 items-center font-semibold text-primary hover:underline">
               Crear cuenta
             </Link>
           </p>
         </CardContent>
-      </Card>
-      </div>
-    </main>
+        </Card>
+      </main>
+    </AuthShell>
   )
 }

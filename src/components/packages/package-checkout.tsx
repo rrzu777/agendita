@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -18,6 +18,7 @@ interface PackageCheckoutProps {
   prefill: PackageCheckoutPrefill
   onCancel: () => void
   transferInfo: BankTransferPublicInfo | null
+  onlineAvailable?: boolean
 }
 
 /** El encabezado que repiten las tres pantallas: volver, nombre y precio. */
@@ -34,10 +35,10 @@ function Encabezado({
 }) {
   return (
     <>
-      <button onClick={onBack} className="mb-4 text-sm font-semibold text-primary underline">
+      <button type="button" onClick={onBack} className="mb-4 min-h-11 rounded-lg px-2 text-sm font-semibold text-primary hover:bg-secondary">
         {backLabel}
       </button>
-      <h3 className="text-lg font-semibold text-primary">{title}</h3>
+      <h2 className="text-lg font-semibold text-primary">{title}</h2>
       <p className="text-sm text-muted-foreground">{subtitle}</p>
     </>
   )
@@ -66,7 +67,7 @@ type Paso =
   | { k: 'method'; bank: BankTransferPublicInfo }
   | { k: 'transfer'; bank: BankTransferPublicInfo; purchaseId: string }
 
-export function PackageCheckout({ product, currency, prefill, onCancel, transferInfo }: PackageCheckoutProps) {
+export function PackageCheckout({ product, currency, prefill, onCancel, transferInfo, onlineAvailable = true }: PackageCheckoutProps) {
   const router = useRouter()
   const [paso, setPaso] = useState<Paso>({ k: 'form' })
   const [name, setName] = useState(prefill.name)
@@ -74,21 +75,27 @@ export function PackageCheckout({ product, currency, prefill, onCancel, transfer
   const [acceptedTerms, setAcceptedTerms] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const nameRef = useRef<HTMLInputElement>(null)
+  const phoneRef = useRef<HTMLInputElement>(null)
+  const termsRef = useRef<HTMLInputElement>(null)
 
   const total = product.quantity + product.bonusQuantity
 
   function validateForm(): boolean {
     setError('')
     if (!name.trim()) {
-      setError('Ingresá tu nombre')
+      setError('Ingresa tu nombre')
+      nameRef.current?.focus()
       return false
     }
     if (!phone.trim()) {
-      setError('Ingresá tu teléfono')
+      setError('Ingresa tu teléfono')
+      phoneRef.current?.focus()
       return false
     }
     if (!acceptedTerms) {
       setError('Debes aceptar los términos')
+      termsRef.current?.focus()
       return false
     }
     return true
@@ -107,53 +114,66 @@ export function PackageCheckout({ product, currency, prefill, onCancel, transfer
   async function startMp() {
     setError('')
     setLoading(true)
-    const createRes = await createPurchase('mp')
-    if (!createRes.ok) {
-      setError(createRes.error)
+    try {
+      const createRes = await createPurchase('mp')
+      if (!createRes.ok) {
+        setError(createRes.error)
+        setLoading(false)
+        return
+      }
+      const { purchaseId } = createRes.data
+      const res = await initiatePackagePayment({ purchaseId })
+      if (!res.ok) {
+        setError(res.error)
+        setLoading(false)
+        return
+      }
+      // loading queda en true a propósito: la página está navegando.
+      if ('redirectUrl' in res.data) {
+        window.location.href = res.data.redirectUrl
+        return
+      }
+      router.push(`/paquetes/confirmation?purchaseId=${purchaseId}`)
+    } catch {
+      setError('No pudimos iniciar la compra. Intenta nuevamente.')
       setLoading(false)
-      return
     }
-    const { purchaseId } = createRes.data
-    const res = await initiatePackagePayment({ purchaseId })
-    if (!res.ok) {
-      setError(res.error)
-      setLoading(false)
-      return
-    }
-    // loading queda en true a propósito: la página está navegando (comportamiento
-    // original), no hace falta (ni corresponde) resetearlo acá.
-    if ('redirectUrl' in res.data) {
-      window.location.href = res.data.redirectUrl
-      return
-    }
-    router.push(`/paquetes/confirmation?purchaseId=${purchaseId}`)
   }
 
   async function startTransfer(bank: BankTransferPublicInfo) {
     setError('')
     setLoading(true)
-    const res = await createPurchase('transfer')
-    if (!res.ok) {
-      setError(res.error)
+    try {
+      const res = await createPurchase('transfer')
+      if (!res.ok) {
+        setError(res.error)
+        setLoading(false)
+        return
+      }
+      setPaso({ k: 'transfer', bank, purchaseId: res.data.purchaseId })
       setLoading(false)
-      return
+    } catch {
+      setError('No pudimos iniciar la compra. Intenta nuevamente.')
+      setLoading(false)
     }
-    setPaso({ k: 'transfer', bank, purchaseId: res.data.purchaseId })
-    setLoading(false)
   }
 
   async function handleDeclare(purchaseId: string) {
     setError('')
     setLoading(true)
-    const res = await declarePackageTransfer({ purchaseId })
-    if (!res.ok) {
-      setError(res.error)
+    try {
+      const res = await declarePackageTransfer({ purchaseId })
+      if (!res.ok) {
+        setError(res.error)
+        setLoading(false)
+        return
+      }
+      // loading queda en true: la navegación desmonta este componente.
+      router.push(`/paquetes/confirmation?purchaseId=${purchaseId}`)
+    } catch {
+      setError('No pudimos avisar al negocio. Intenta nuevamente.')
       setLoading(false)
-      return
     }
-    // loading queda en true a propósito (comportamiento original): la navegación
-    // desmonta este componente, así que no hay un setLoading(false) que hacer.
-    router.push(`/paquetes/confirmation?purchaseId=${purchaseId}`)
   }
 
   function handleFormSubmit() {
@@ -169,7 +189,7 @@ export function PackageCheckout({ product, currency, prefill, onCancel, transfer
 
   /** El error de la action, con el mismo formato en las tres pantallas. */
   const errorLine = error && (
-    <p className="mt-3 flex items-center gap-2 text-sm text-destructive">
+    <p id="package-checkout-error" role="alert" className="mt-3 flex items-center gap-2 text-sm text-destructive">
       <AlertCircle className="size-4" />
       {error}
     </p>
@@ -178,7 +198,7 @@ export function PackageCheckout({ product, currency, prefill, onCancel, transfer
   switch (paso.k) {
     case 'transfer':
       return (
-        <div className="studio-card p-5">
+        <div className="rounded-[var(--radius)] border border-border bg-card p-5 shadow-sm">
           <Encabezado onBack={onCancel} backLabel="← Volver al catálogo" title={product.name} subtitle={subtitulo} />
           <div className="mt-4">
             <PackageTransferInstructions
@@ -195,23 +215,26 @@ export function PackageCheckout({ product, currency, prefill, onCancel, transfer
 
     case 'method':
       return (
-        <div className="studio-card p-5">
+        <div className="rounded-[var(--radius)] border border-border bg-card p-5 shadow-sm">
           <Encabezado onBack={() => setPaso({ k: 'form' })} backLabel="← Volver" title={product.name} subtitle={subtitulo} />
 
           <div className="mt-4 space-y-3">
-            <Button className="h-12 w-full rounded-full" onClick={() => void startMp()} disabled={loading}>
-              {loading ? (
-                <>
-                  <Loader2 className="mr-2 size-4 animate-spin" />
-                  Procesando…
-                </>
-              ) : (
-                'Pagar con Mercado Pago'
-              )}
-            </Button>
+            {onlineAvailable && (
+              <Button size="touch" className="w-full rounded-xl" onClick={() => void startMp()} disabled={loading}>
+                {loading ? (
+                  <>
+                    <Loader2 className="mr-2 size-4 animate-spin" />
+                    Procesando…
+                  </>
+                ) : (
+                  'Pagar con Mercado Pago'
+                )}
+              </Button>
+            )}
             <Button
               variant="outline"
-              className="h-12 w-full rounded-full"
+              size="touch"
+              className="w-full rounded-xl"
               onClick={() => void startTransfer(paso.bank)}
               disabled={loading}
             >
@@ -236,28 +259,30 @@ export function PackageCheckout({ product, currency, prefill, onCancel, transfer
   }
 
   return (
-    <div className="studio-card p-5">
+    <div className="rounded-[var(--radius)] border border-border bg-card p-5 shadow-sm">
       <Encabezado onBack={onCancel} backLabel="← Volver al catálogo" title={product.name} subtitle={subtitulo} />
 
       <div className="mt-4 space-y-3">
         <div>
-          <label className="text-sm font-semibold text-primary">Nombre</label>
-          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Tu nombre" />
+          <label htmlFor="package-customer-name" className="text-sm font-semibold text-primary">Nombre <span className="text-muted-foreground">(requerido)</span></label>
+          <Input ref={nameRef} id="package-customer-name" value={name} onChange={(e) => { setName(e.target.value); setError('') }} placeholder="Tu nombre" density="touch" aria-required="true" aria-invalid={error === 'Ingresa tu nombre'} aria-describedby={error ? 'package-checkout-error' : undefined} />
         </div>
         <div>
-          <label className="text-sm font-semibold text-primary">Teléfono</label>
-          <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+56 9 1111 2222" inputMode="tel" />
+          <label htmlFor="package-customer-phone" className="text-sm font-semibold text-primary">Teléfono <span className="text-muted-foreground">(requerido)</span></label>
+          <Input ref={phoneRef} id="package-customer-phone" value={phone} onChange={(e) => { setPhone(e.target.value); setError('') }} placeholder="+56 9 1111 2222" inputMode="tel" density="touch" aria-required="true" aria-invalid={error === 'Ingresa tu teléfono'} aria-describedby={error ? 'package-checkout-error' : undefined} />
         </div>
         <div>
-          <label className="text-sm font-semibold text-primary">Email</label>
-          <Input value={prefill.email ?? ''} readOnly disabled />
+          <label htmlFor="package-customer-email" className="text-sm font-semibold text-primary">Email <span className="text-muted-foreground">(solo lectura)</span></label>
+          <Input id="package-customer-email" value={prefill.email ?? ''} readOnly disabled density="touch" />
         </div>
-        <label className="flex items-start gap-2 text-sm text-muted-foreground">
+        <label className="flex min-h-11 items-start gap-3 py-2 text-sm text-muted-foreground">
           <input
+            ref={termsRef}
             type="checkbox"
             checked={acceptedTerms}
-            onChange={(e) => setAcceptedTerms(e.target.checked)}
-            className="mt-1"
+            onChange={(e) => { setAcceptedTerms(e.target.checked); setError('') }}
+            aria-describedby={error ? 'package-checkout-error' : undefined}
+            className="mt-0.5 size-5 accent-primary"
           />
           Acepto los términos y condiciones de la compra.
         </label>
@@ -265,7 +290,7 @@ export function PackageCheckout({ product, currency, prefill, onCancel, transfer
 
       {errorLine}
 
-      <Button className="mt-4 h-12 w-full rounded-full" onClick={handleFormSubmit} disabled={loading}>
+      <Button size="touch" className="mt-4 w-full rounded-xl" onClick={handleFormSubmit} disabled={loading}>
         {loading ? (
           <>
             <Loader2 className="mr-2 size-4 animate-spin" />

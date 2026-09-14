@@ -26,6 +26,7 @@ import { getVocabulary } from '@/lib/vocabulary'
 import { resolveCancellationPolicy } from '@/lib/bookings/cancellation-policy'
 import { AccountPushLink } from '@/components/push/account-push-link'
 import { isPushBookingEligible } from '@/lib/push/eligibility'
+import { ClientBusinessShell } from '@/components/client/client-shell'
 
 const UPCOMING_STATUSES = ['pending_payment', 'pending_confirmation', 'confirmed'] as const
 
@@ -93,7 +94,7 @@ export default async function MiBusinessPage({ params }: { params: Promise<{ slu
   const business = await prisma.business.findUnique({
     where: { slug },
     select: {
-      id: true, name: true, slug: true, subdomain: true, logoUrl: true, category: true, selfServiceCutoffHours: true,
+      id: true, name: true, slug: true, subdomain: true, logoUrl: true, category: true, brandColor: true, visualStyle: true, selfServiceCutoffHours: true,
       cancellationPolicy: true, cancellationReminderEnabled: true,
       addressText: true,
       loyaltyConfig: { select: { isActive: true, programName: true, pointsLabel: true, cardMessage: true } },
@@ -131,39 +132,37 @@ export default async function MiBusinessPage({ params }: { params: Promise<{ slu
     }),
   ])
 
-  // La tarjeta se lee mejor angosta: ancho propio dentro del contenedor del layout.
-  return (
-    <main className="mx-auto max-w-md pb-10">
-      <h1 className="pt-6 text-center text-xl font-semibold">{business.name}</h1>
-      {customers.map((c, i) => (
-        <LoyaltyCard
-          key={c.id}
-          customerName={c.name}
-          business={{ name: business.name, logoUrl: business.logoUrl }}
-          vocabulary={getVocabulary(business.category)}
-          data={cards[i]}
-          redeemAction={redeemAction.bind(null, c.id)}
-          titleAs="h2"
-        />
-      ))}
+  const bookingHref = getBookingFunnelUrl({ slug: business.slug, subdomain: business.subdomain })
 
-      <section className="mt-8">
-        <h2 className="mb-2 text-sm font-semibold text-gray-700">Próximas reservas</h2>
+  return (
+    <ClientBusinessShell business={business} bookingHref={bookingHref}>
+      <main>
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Tu espacio</p>
+        <h1 className="mt-2 font-heading text-3xl font-semibold tracking-tight text-primary">Tu cuenta en {business.name}</h1>
+        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">Revisa tus próximas reservas, gestiona cambios y consulta tus beneficios.</p>
+
+        <div className="mt-8 grid items-start gap-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(320px,.75fr)]">
+          <div className="space-y-6">
+      <section id="proximas" className="scroll-mt-36 rounded-[var(--radius)] border border-border bg-card p-5 sm:p-6" aria-labelledby="proximas-title">
+        <h2 id="proximas-title" className="font-heading text-xl font-semibold text-primary">Próximas reservas</h2>
         {upcoming.length === 0 ? (
-          <p className="text-sm text-gray-400">No tienes reservas próximas.</p>
+          <div className="mt-4 rounded-xl bg-secondary/60 p-4">
+            <p className="text-sm font-medium text-primary">No tienes reservas próximas.</p>
+            <a href={bookingHref} className="mt-2 inline-flex min-h-11 items-center font-semibold text-primary underline underline-offset-4">Reservar una hora</a>
+          </div>
         ) : (
-          <ul className="space-y-2">
+          <ul className="mt-4 space-y-3">
             {upcoming.map((b) => {
               // También en el local: quien mira es la clienta y "¿dónde era?"
               // merece la dirección, no sólo las modalidades notables.
               const where = bookingWhere(b, { businessAddress: business.addressText })
               const { cutoffHours } = resolveCancellationPolicy(b, business)
               return (
-              <li key={b.id} className="rounded-lg border border-gray-100 px-3 py-2 text-sm">
-                <div className="font-medium">{bookingServiceName(b)}</div>
-                <div className="text-gray-500">{formatShortDate(b.startDateTime)} · {statusLabel(b, now)} · {formatBookingNumber(b.bookingNumber, b.id)}</div>
+              <li key={b.id} className="rounded-xl border border-border bg-background px-4 py-4 text-sm">
+                <div className="font-semibold text-primary">{bookingServiceName(b)}</div>
+                <div className="mt-1 text-muted-foreground">{formatShortDate(b.startDateTime)} · {statusLabel(b, now)} · {formatBookingNumber(b.bookingNumber, b.id)}</div>
                 {(isNotableModality(b.modality) || where.detail) && (
-                  <div className="text-gray-500">
+                  <div className="mt-1 text-muted-foreground">
                     {where.label}
                     {where.detail && (
                       <>
@@ -193,39 +192,55 @@ export default async function MiBusinessPage({ params }: { params: Promise<{ slu
             })}
           </ul>
         )}
-        {upcoming.some((booking) => isPushBookingEligible(booking, business, now)) && <AccountPushLink />}
-        <a
-          href={getBookingFunnelUrl({ slug: business.slug, subdomain: business.subdomain })}
-          className="mt-3 inline-block rounded-full bg-pink-600 px-4 py-2 text-sm font-semibold text-white"
-        >
-          Reservar
-        </a>
       </section>
 
-      <section className="mt-8">
-        <h2 className="mb-2 text-sm font-semibold text-gray-700">Historial</h2>
+      <section id="historial" className="scroll-mt-36 rounded-[var(--radius)] border border-border bg-card p-5 sm:p-6" aria-labelledby="historial-title">
+        <h2 id="historial-title" className="font-heading text-xl font-semibold text-primary">Historial</h2>
         {past.length === 0 ? (
-          <p className="text-sm text-gray-400">Todavía no tienes visitas.</p>
+          <p className="mt-4 text-sm text-muted-foreground">Todavía no tienes visitas.</p>
         ) : (
-          <ul className="divide-y divide-gray-100">
+          <ul className="mt-4 divide-y divide-border">
             {past.map((b) => (
-              <li key={b.id} className="flex items-center justify-between py-2 text-sm">
-                <span>{bookingServiceName(b)}</span>
-                <span className="text-gray-400">{formatShortDate(b.startDateTime)} · {statusLabel(b, now)}</span>
+              <li key={b.id} className="flex min-h-14 flex-col justify-center gap-1 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+                <span className="font-medium text-primary">{bookingServiceName(b)}</span>
+                <span className="text-muted-foreground">{formatShortDate(b.startDateTime)} · {statusLabel(b, now)}</span>
               </li>
             ))}
           </ul>
         )}
       </section>
+          </div>
 
-      {customers.map((c) => (
-        <MarketingOptOutSection
-          key={c.id}
-          businessName={business.name}
-          optedOut={c.marketingOptOutAt != null}
-          action={optOutAsMeAction.bind(null, c.id)}
-        />
-      ))}
-    </main>
+          <aside className="space-y-6 lg:sticky lg:top-36">
+            <section id="beneficios" className="scroll-mt-36 rounded-[var(--radius)] border border-border bg-card p-5 sm:p-6" aria-label="Beneficios">
+              {customers.map((c, i) => (
+                <LoyaltyCard
+                  key={c.id}
+                  customerName={c.name}
+                  business={{ name: business.name, logoUrl: business.logoUrl }}
+                  vocabulary={getVocabulary(business.category)}
+                  data={cards[i]}
+                  redeemAction={redeemAction.bind(null, c.id)}
+                  titleAs="h2"
+                />
+              ))}
+            </section>
+
+            <section id="preferencias" className="scroll-mt-36 rounded-[var(--radius)] border border-border bg-card p-5 sm:p-6" aria-labelledby="preferencias-title">
+              <h2 id="preferencias-title" className="font-heading text-xl font-semibold text-primary">Preferencias</h2>
+              {upcoming.some((booking) => isPushBookingEligible(booking, business, now)) && <AccountPushLink />}
+              {customers.map((c) => (
+                <MarketingOptOutSection
+                  key={c.id}
+                  businessName={business.name}
+                  optedOut={c.marketingOptOutAt != null}
+                  action={optOutAsMeAction.bind(null, c.id)}
+                />
+              ))}
+            </section>
+          </aside>
+        </div>
+      </main>
+    </ClientBusinessShell>
   )
 }

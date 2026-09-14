@@ -149,7 +149,7 @@ describe('PushManager', () => {
       response: { ok: false, json: async () => ({ error: 'unauthorized' }) },
       isAuthenticated: false,
       hasGrant: true,
-      finalCopy: 'iniciá sesión',
+      finalCopy: 'inicia sesión',
     },
     {
       label: 'zero eligible account targets',
@@ -224,7 +224,7 @@ describe('PushManager', () => {
     await act(async () => root.render(<PushManager {...managerProps(false)} />))
     await flushPromises()
 
-    expect(container.textContent).toContain('iniciá sesión')
+    expect(container.textContent).toContain('inicia sesión')
     expect(container.querySelector('a')?.getAttribute('href')).toBe('/ingresar?next=/notificaciones')
     expect(container.textContent).not.toContain('Activar recordatorios')
     expect(requestPermission).not.toHaveBeenCalled()
@@ -249,7 +249,7 @@ describe('PushManager', () => {
     await act(async () => root.render(<PushManager {...managerProps(true, false)} />))
     await flushPromises()
 
-    expect(container.textContent).toContain('No tenés citas elegibles')
+    expect(container.textContent).toContain('No tienes citas elegibles')
     expect(container.textContent).not.toContain('Activar recordatorios')
     expect(requestPermission).not.toHaveBeenCalled()
     expect(register).not.toHaveBeenCalled()
@@ -301,7 +301,7 @@ describe('PushManager', () => {
     })
     expect(browserSubscription.unsubscribe).toHaveBeenCalledTimes(1)
     expect(register).not.toHaveBeenCalled()
-    expect(container.textContent).toContain('No tenés citas elegibles')
+    expect(container.textContent).toContain('No tienes citas elegibles')
     await act(async () => root.unmount())
   })
 
@@ -668,7 +668,7 @@ describe('PushManager', () => {
     })
     expect(browserSubscription.unsubscribe).toHaveBeenCalledTimes(1)
     expect(register).not.toHaveBeenCalled()
-    expect(container.textContent).toContain('iniciá sesión')
+    expect(container.textContent).toContain('inicia sesión')
     await act(async () => root.unmount())
   })
 
@@ -758,7 +758,7 @@ describe('PushManager', () => {
     expect(fetchMock).toHaveBeenCalledTimes(3)
     expect(fetchMock.mock.calls[1][1]).toEqual(fetchMock.mock.calls[2][1])
     expect(browserSubscription.unsubscribe).toHaveBeenCalledTimes(1)
-    expect(container.textContent).toContain('iniciá sesión')
+    expect(container.textContent).toContain('inicia sesión')
     expect(container.textContent).not.toContain('Activar recordatorios')
     await act(async () => root.unmount())
   })

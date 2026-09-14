@@ -9,6 +9,8 @@ vi.mock('@/server/actions/reviews', () => ({
   submitReview: vi.fn(),
 }))
 
+import { submitReview } from '@/server/actions/reviews'
+
 describe('reviews form system', () => {
   let container: HTMLDivElement
   let root: Root
@@ -57,5 +59,19 @@ describe('reviews form system', () => {
     expect(firstStar?.getAttribute('aria-pressed')).toBe('false')
     expect(firstStar?.className).toContain('size-12')
     expect(container.querySelector<HTMLButtonElement>('button[type="submit"]')?.getAttribute('data-size')).toBe('touch')
+  })
+
+  it('recovers the public review form after a transport failure', async () => {
+    vi.mocked(submitReview).mockRejectedValueOnce(new Error('network'))
+    const { ReviewForm } = await import('@/app/review/[bookingId]/review-form')
+    await act(async () => root.render(<ReviewForm bookingId="booking-1" token="token-1" />))
+    await act(async () => container.querySelector<HTMLButtonElement>('button[aria-label="5 estrellas"]')!.click())
+    await act(async () => {
+      container.querySelector<HTMLFormElement>('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+      await Promise.resolve()
+    })
+
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('Intenta nuevamente')
+    expect(container.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(false)
   })
 })

@@ -39,14 +39,14 @@ export function RedeemButton({
   }
 
   return (
-    <li className="flex items-center justify-between rounded-lg border border-gray-100 px-3 py-2 text-sm">
-      <span className={disabled ? 'text-gray-400' : ''}>{name} · {pointsCost} {label}</span>
+    <li className="flex min-h-14 items-center justify-between gap-3 rounded-lg border border-border px-3 py-2 text-sm">
+      <span className={disabled ? 'text-muted-foreground' : 'text-primary'}>{name} · {pointsCost} {label}</span>
       <div className="text-right">
         <button
           type="button"
           onClick={onRedeem}
           disabled={disabled || isPending}
-          className="rounded-md bg-pink-600 px-3 py-1 text-white disabled:opacity-40"
+          className="min-h-11 rounded-lg bg-primary px-3 font-semibold text-primary-foreground disabled:opacity-40"
         >
           {isPending ? 'Canjeando…' : 'Canjear'}
         </button>

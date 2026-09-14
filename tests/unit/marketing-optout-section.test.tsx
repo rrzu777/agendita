@@ -1,3 +1,5 @@
+import { act } from 'react'
+import { createRoot } from 'react-dom/client'
 import { describe, it, expect, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 
@@ -20,5 +22,25 @@ describe('MarketingOptOutSection', () => {
     )
     expect(html).toContain('No recibirás promociones de Studio Andrea')
     expect(html).toContain('Volver a recibirlas')
+  })
+
+  it('confirma la baja en la misma página después de guardarla', async () => {
+    const action = vi.fn(async () => {})
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const root = createRoot(host)
+    await act(async () => root.render(<MarketingOptOutSection businessName="Studio Andrea" optedOut={false} action={action} />))
+
+    await act(async () => {
+      host.querySelector<HTMLButtonElement>('button')!.click()
+      await Promise.resolve()
+    })
+
+    expect(action).toHaveBeenCalledWith(true)
+    expect(host.textContent).toContain('No recibirás promociones de Studio Andrea')
+    expect(host.querySelector('[role="status"]')?.textContent).toContain('Preferencia guardada')
+
+    await act(async () => root.unmount())
+    host.remove()
   })
 })

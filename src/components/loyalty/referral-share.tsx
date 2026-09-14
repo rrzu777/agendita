@@ -7,10 +7,12 @@ export function ReferralShare({
   url,
   firstName,
   vocabulary,
+  titleAs: TitleTag = 'h2',
 }: {
   url: string
   firstName: string
   vocabulary: Vocabulary
+  titleAs?: 'h2' | 'h3'
 }) {
   const [copied, setCopied] = useState(false)
 
@@ -29,15 +31,15 @@ export function ReferralShare({
 
   return (
     <section className="mt-8">
-      <h2 className="mb-2 text-sm font-semibold text-gray-700">{vocabulary.referAFriend}</h2>
-      <div className="rounded-2xl bg-pink-50 p-4">
-        <p className="text-sm text-pink-700">Comparte tu enlace y {vocabulary.bothWin} recompensas.</p>
-        <div className="mt-3 flex items-center gap-2 rounded-lg bg-white px-3 py-2">
-          <code className="flex-1 truncate font-mono text-xs text-gray-600">{url}</code>
+      <TitleTag className="mb-2 text-sm font-semibold text-primary">{vocabulary.referAFriend}</TitleTag>
+      <div className="rounded-[var(--radius)] bg-[var(--tenant-brand-soft)] p-4">
+        <p className="text-sm text-[var(--tenant-brand-strong)]">Comparte tu enlace y {vocabulary.bothWin} recompensas.</p>
+        <div className="mt-3 flex items-center gap-2 rounded-lg bg-card px-3 py-2">
+          <code className="flex-1 truncate font-mono text-xs text-muted-foreground">{url}</code>
           <button
             type="button"
             onClick={handleCopy}
-            className="shrink-0 rounded-md border border-pink-200 px-2 py-1 text-xs font-medium text-pink-700"
+            className="min-h-11 shrink-0 rounded-lg border border-border px-3 text-xs font-semibold text-primary"
           >
             {copied ? 'Copiado' : 'Copiar'}
           </button>
@@ -46,7 +48,7 @@ export function ReferralShare({
           href={whatsappHref}
           target="_blank"
           rel="noopener noreferrer"
-          className="mt-3 block rounded-md bg-pink-600 px-3 py-2 text-center text-sm font-medium text-white"
+          className="mt-3 flex min-h-11 items-center justify-center rounded-lg bg-primary px-3 text-center text-sm font-semibold text-primary-foreground"
         >
           Compartir por WhatsApp
         </a>

@@ -29,7 +29,7 @@ describe('/mi home', () => {
     mockFindMany.mockResolvedValue([
       {
         id: 'c1', name: 'Ana',
-        business: { id: 'b1', name: 'Mimos Nails', slug: 'mimosnails', logoUrl: null, loyaltyConfig: { isActive: true, pointsLabel: 'mimos' } },
+        business: { id: 'b1', name: 'Mimos Nails', slug: 'mimosnails', logoUrl: null, category: 'nails', brandColor: '#B64D68', visualStyle: 'soft', loyaltyConfig: { isActive: true, pointsLabel: 'mimos' } },
       },
     ])
     mockBalance.mockResolvedValue(120)
@@ -38,5 +38,8 @@ describe('/mi home', () => {
     expect(html).toContain('120')
     expect(html).toContain('mimos')
     expect(html).toContain('href="/mi/mimosnails"')
+    expect(html).toContain('--tenant-brand')
+    expect(html).toContain('Abrir cuenta')
+    expect(html).toContain('Mi cuenta')
   })
 })

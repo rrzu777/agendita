@@ -72,4 +72,41 @@ describe('PackageCheckout — el paso se lleva sus datos', () => {
     await act(async () => root.unmount())
     container.remove()
   })
+
+  it('recupera el formulario si la creación falla por red', async () => {
+    mockCreatePurchase.mockRejectedValueOnce(new Error('network'))
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    await act(async () => root.render(
+      <PackageCheckout product={product} currency="CLP" prefill={prefill} onCancel={() => {}} transferInfo={null} />,
+    ))
+    await act(async () => container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click())
+    await clickButton(container, 'Pagar', { match: 'contains' })
+
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('Intenta nuevamente')
+    expect(container.textContent).toContain('Acepto los términos')
+    expect(container.querySelector<HTMLButtonElement>('button:last-child')?.disabled).toBe(false)
+
+    await act(async () => root.unmount())
+    container.remove()
+  })
+
+  it('ofrece solo transferencia cuando Mercado Pago no está disponible', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    await act(async () => root.render(
+      <PackageCheckout product={product} currency="CLP" prefill={prefill} onCancel={() => {}} transferInfo={transferInfo} onlineAvailable={false} />,
+    ))
+    await act(async () => container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click())
+    await clickButton(container, 'Continuar')
+
+    expect(container.textContent).toContain('Transferencia bancaria')
+    expect(container.textContent).not.toContain('Pagar con Mercado Pago')
+
+    await act(async () => root.unmount())
+    container.remove()
+  })
 })

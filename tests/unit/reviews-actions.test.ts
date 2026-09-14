@@ -120,13 +120,16 @@ describe('getReviewRequest', () => {
     expect(result).toBeNull()
   })
 
-  it('throws for non-completed booking', async () => {
+  it('returns a safe unavailable state for a non-completed booking', async () => {
     mockPrisma.booking.findUnique.mockResolvedValue({
       ...completedBooking,
       status: BookingStatus.confirmed,
     })
 
-    await expect(getReviewRequest('booking-1', 'token-abc-123')).rejects.toThrow('aún no ha sido completada')
+    await expect(getReviewRequest('booking-1', 'token-abc-123')).resolves.toMatchObject({
+      businessName: 'Negocio Test',
+      unavailableReason: 'Esta reserva aún no ha sido completada',
+    })
   })
 
   it('returns alreadyReviewed true when review exists', async () => {
