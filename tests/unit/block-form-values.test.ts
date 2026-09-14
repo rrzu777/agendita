@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { deriveBlockFormValues } from '@/lib/calendar/block-form-values'
+import { deriveBlockFormValues, resolveBlockFormInterval } from '@/lib/calendar/block-form-values'
 
 describe('deriveBlockFormValues', () => {
   it('convierte un bloqueo UTC a fecha/hora local del negocio', () => {
@@ -11,6 +11,7 @@ describe('deriveBlockFormValues', () => {
     const result = deriveBlockFormValues(block, 'America/Santiago')
     expect(result).toEqual({
       date: '2026-06-01',
+      endDate: '2026-06-01',
       startTime: '13:00',
       endTime: '14:00',
       reason: 'Almuerzo',
@@ -38,5 +39,29 @@ describe('deriveBlockFormValues', () => {
     expect(result.date).toBe('2026-06-01')
     expect(result.startTime).toBe('22:00')
     expect(result.endTime).toBe('23:00')
+  })
+
+  it('representa la fecha final original de un bloqueo nocturno', () => {
+    const result = deriveBlockFormValues({
+      startDateTime: '2026-06-02T03:55:00.000Z',
+      endDateTime: '2026-06-02T04:10:00.000Z',
+      reason: 'Cierre',
+    }, 'America/Santiago')
+    expect(result.date).toBe('2026-06-01')
+    expect(result.endDate).toBe('2026-06-02')
+    expect(result.startTime).toBe('23:55')
+    expect(result.endTime).toBe('00:10')
+  })
+
+  it('conserva los instantes UTC ambiguos cuando solo cambia el motivo', () => {
+    const block = {
+      startDateTime: '2026-04-05T02:30:00.000Z',
+      endDateTime: '2026-04-05T03:45:00.000Z',
+      reason: 'Hora repetida',
+    }
+    const values = deriveBlockFormValues(block, 'America/Santiago')
+    const interval = resolveBlockFormInterval(block, values, 'America/Santiago')
+    expect(interval.start.toISOString()).toBe(block.startDateTime)
+    expect(interval.end.toISOString()).toBe(block.endDateTime)
   })
 })

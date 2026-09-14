@@ -9,12 +9,7 @@ import { getVocabulary } from '@/lib/vocabulary'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { BookingStatusButton } from '@/components/dashboard/booking-status-button'
-import { CalendarDays, Clock, User, UserCheck, CreditCard, MapPin, Phone, Plus, RefreshCw } from 'lucide-react'
-import { BookingContactButtons } from '@/components/dashboard/booking-contact-buttons'
-import { CancelBookingButton } from '@/components/dashboard/cancel-booking-button'
-import { ManualPaymentDialog } from '@/components/dashboard/manual-payment-dialog'
-import { isManualPaymentAllowed, manualPaymentBlockedReason } from '@/components/dashboard/manual-payment-utils'
+import { CalendarDays, Clock, User, UserCheck, CreditCard, MapPin, Phone, Plus } from 'lucide-react'
 import { formatBookingNumber } from '@/lib/bookings/number'
 import { bookingWhere, isNotableModality } from '@/lib/services/modality'
 import type { ServiceModality } from '@prisma/client'
@@ -25,8 +20,6 @@ import { StatusBadge } from '@/components/ui/status-badge'
 import { displayedBookingStatus } from '@/lib/bookings/status-labels'
 import { PaymentRevertedBadge } from '@/components/dashboard/payment-reverted-badge'
 import { BookingRowActions } from '@/components/dashboard/booking-row-actions'
-import { ReviveBookingButton } from '@/components/dashboard/revive-booking-dialog'
-import { getReviveReopenState } from '@/components/dashboard/revive-utils'
 import { PendingTransfersSection, type PendingTransferItem } from '@/components/dashboard/pending-transfers-section'
 import { DashboardPagination, getSingleSearchParam } from '@/components/dashboard/dashboard-pagination'
 import {
@@ -103,13 +96,8 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
    *  el mismo instante. */
   now: Date
 }) {
-  const canRegisterPayment = isManualPaymentAllowed(booking, now)
-  const paymentBlockedReason = manualPaymentBlockedReason(booking, now)
   const isPendingTransfer = hasPendingDeclaredTransfer(booking)
   const isPendingBalanceTransfer = hasPendingBalanceTransfer(booking)
-  const reviveState = booking.status === 'expired'
-    ? getReviveReopenState({ startDateTime: booking.startDateTime, paymentMethod: booking.paymentMethod ?? null }, !!transferEnabled, now)
-    : null
 
   return (
     <article className="studio-card shadow-none p-5">
@@ -180,10 +168,14 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
         )}
       </div>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <BookingContactButtons
-          variant="compact"
-          booking={{
+      <div className="mt-4 border-t border-border/50 pt-4">
+        <BookingRowActions
+          booking={booking}
+          businessCurrency={businessCurrency}
+          transferEnabled={transferEnabled}
+          now={now}
+          contactData={{
+            id: booking.id,
             bookingNumber: booking.bookingNumber,
             customerName: booking.customer?.name || '',
             customerPhone: booking.customer?.phone || null,
@@ -202,93 +194,6 @@ export function BookingCard({ booking, businessCurrency, businessTimezone, busin
           }}
         />
       </div>
-
-      {booking.status === 'confirmed' && (
-        <div data-tour-id="bookings-actions" className="mt-4 grid grid-cols-2 gap-2 border-t border-border/50 pt-4">
-          <BookingStatusButton bookingId={booking.id} status="completed" label="Completar" pendingLabel="Completando…" errorLabel="Error al completar" className="min-h-11 w-full" />
-          {/* prefetch={false}: esta card se renderiza por CADA reserva confirmada
-              y getBookings() no está paginado; sin esto, cada fila visible haría
-              un prefetch de su ruta de reprogramar (O(reservas)). Reprogramar es
-              acción poco frecuente: fetch on-click alcanza. */}
-          <Button type="button" variant="outline" className="w-full min-h-11 text-sm font-semibold" asChild><Link href={`/dashboard/bookings/${booking.id}/reschedule`} prefetch={false}>
-              <RefreshCw className="mr-1 size-3" />
-              Reprogramar
-            </Link></Button>
-          <div>
-            <CancelBookingButton bookingId={booking.id} size="default" />
-          </div>
-          {canRegisterPayment && (
-            <ManualPaymentDialog
-              bookings={[booking]}
-              now={now}
-              businessCurrency={businessCurrency}
-              defaultBookingId={booking.id}
-              triggerLabel="Cobrar"
-              triggerVariant="outline"
-              triggerClassName="h-10 w-full min-w-0 text-sm font-semibold"
-            />
-          )}
-        </div>
-      )}
-      {booking.status === 'pending_confirmation' && (
-        <div data-tour-id="bookings-actions" className="mt-4 flex gap-2 border-t border-border/50 pt-4">
-          <div className="flex-1"><BookingStatusButton bookingId={booking.id} status="confirmed" label="Aceptar" pendingLabel="Aceptando…" errorLabel="Error al aceptar" variant="default" className="min-h-11 w-full" /></div>
-          <div className="flex-1">
-            <CancelBookingButton bookingId={booking.id} mode="reject" label="Rechazar" size="default" />
-          </div>
-        </div>
-      )}
-      {booking.status === 'pending_payment' && (
-        <div data-tour-id="bookings-actions" className="mt-4 border-t border-border/50 pt-4">
-          {/* El motivo va escrito y no en un title: acá hay ancho, y es táctil —
-              en un teléfono nadie descubre un tooltip. */}
-          {paymentBlockedReason && (
-            <p className="mb-3 text-sm text-muted-foreground">{paymentBlockedReason}</p>
-          )}
-          <div className="grid grid-cols-2 gap-2 [&>button]:min-h-11">
-            {canRegisterPayment && (
-              <ManualPaymentDialog
-                bookings={[booking]}
-                now={now}
-                businessCurrency={businessCurrency}
-                defaultBookingId={booking.id}
-                triggerLabel="Cobrar"
-                triggerVariant="outline"
-                triggerClassName="min-h-11 w-full min-w-0 text-sm font-semibold"
-              />
-            )}
-            <CancelBookingButton bookingId={booking.id} size="default" />
-          </div>
-        </div>
-      )}
-      {booking.status === 'completed' && canRegisterPayment && (
-        // Recobro (spec FU-B4b-3 §6): completed con saldo (post-chargeback o
-        // saldo tras atender) — solo registrar pago, sin cancelar/reprogramar.
-        <div data-tour-id="bookings-actions" className="mt-4 flex gap-2 border-t border-border/50 pt-4">
-          <ManualPaymentDialog
-            bookings={[booking]}
-            now={now}
-            businessCurrency={businessCurrency}
-            defaultBookingId={booking.id}
-            triggerLabel="Cobrar"
-            triggerVariant="outline"
-            triggerClassName="h-10 w-full min-w-0 text-sm font-semibold"
-          />
-        </div>
-      )}
-      {reviveState && (
-        <div data-tour-id="bookings-actions" className="mt-4 flex gap-2 border-t border-border/50 pt-4">
-          <ReviveBookingButton
-            bookingId={booking.id}
-            serviceName={bookingServiceName(booking)}
-            customerName={booking.customer?.name}
-            customerHasEmail={!!booking.customer?.email}
-            canReopen={reviveState.canReopen}
-            reopenDisabledReason={reviveState.reason}
-            triggerClassName="flex-1 min-h-11 text-sm font-semibold"
-          />
-        </div>
-      )}
     </article>
   )
 }
@@ -502,50 +407,24 @@ export default async function BookingsPage({
                           now={now}
                           businessCurrency={businessCurrency}
                           transferEnabled={transferEnabled}
-                          contactMenu={
-                            <BookingContactButtons
-                              variant="menu"
-                              booking={{
-                                bookingNumber: booking.bookingNumber,
-                                customerName: booking.customer?.name || '',
-                                customerPhone: booking.customer?.phone || null,
-                                serviceName: bookingServiceName(booking),
-                                professionalName: booking.professional?.name ?? null,
-                                startDateTime: booking.startDateTime.toISOString(),
-                                businessTimezone,
-                                businessCurrency,
-                                totalPrice: booking.totalPrice,
-                                depositPaid: booking.depositPaid,
-                                remainingBalance: booking.remainingBalance,
-                                modality: booking.modality,
-                                serviceAddress: booking.serviceAddress,
-                                meetingUrl: booking.meetingUrl,
-                                businessAddress,
-                              }}
-                            />
-                          }
-                          contactInline={
-                            <BookingContactButtons
-                              variant="compact"
-                              booking={{
-                                bookingNumber: booking.bookingNumber,
-                                customerName: booking.customer?.name || '',
-                                customerPhone: booking.customer?.phone ?? null,
-                                serviceName: bookingServiceName(booking),
-                                professionalName: booking.professional?.name ?? null,
-                                startDateTime: booking.startDateTime.toISOString(),
-                                businessTimezone,
-                                businessCurrency,
-                                totalPrice: booking.totalPrice ?? 0,
-                                depositPaid: booking.depositPaid,
-                                remainingBalance: booking.remainingBalance ?? 0,
-                                modality: booking.modality,
-                                serviceAddress: booking.serviceAddress,
-                                meetingUrl: booking.meetingUrl,
-                                businessAddress,
-                              }}
-                            />
-                          }
+                          contactData={{
+                            id: booking.id,
+                            bookingNumber: booking.bookingNumber,
+                            customerName: booking.customer?.name || '',
+                            customerPhone: booking.customer?.phone || null,
+                            serviceName: bookingServiceName(booking),
+                            professionalName: booking.professional?.name ?? null,
+                            startDateTime: booking.startDateTime.toISOString(),
+                            businessTimezone,
+                            businessCurrency,
+                            totalPrice: booking.totalPrice ?? 0,
+                            depositPaid: booking.depositPaid,
+                            remainingBalance: booking.remainingBalance ?? 0,
+                            modality: booking.modality,
+                            serviceAddress: booking.serviceAddress,
+                            meetingUrl: booking.meetingUrl,
+                            businessAddress,
+                          }}
                         />
                       </TableCell>
                     </TableRow>

@@ -13,11 +13,13 @@ export function TableActions({
   primary,
   children,
   align = 'end',
+  triggerClassName,
   ...props
 }: {
   primary?: React.ReactNode
   children?: React.ReactNode
   align?: 'start' | 'end'
+  triggerClassName?: string
 } & React.ComponentProps<'div'>) {
   const items = React.Children.toArray(children).filter(Boolean)
   const hasMenu = items.length > 0
@@ -31,7 +33,7 @@ export function TableActions({
       {hasMenu && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button type="button" variant="ghost" size="icon" aria-label="Más acciones">
+            <Button type="button" variant="ghost" size="icon" className={triggerClassName} aria-label="Más acciones">
               <MoreVertical className="size-4" />
             </Button>
           </DropdownMenuTrigger>

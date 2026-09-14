@@ -21,8 +21,9 @@ import {
   parseISO,
 } from 'date-fns'
 import { es } from 'date-fns/locale'
+import { formatInTimeZone } from 'date-fns-tz'
 import { Button } from '@/components/ui/button'
-import { ChevronLeft, ChevronRight, Clock, Check, X, Minus } from 'lucide-react'
+import { ChevronDown, ChevronLeft, ChevronRight, Clock, Check, X, Minus } from 'lucide-react'
 import { BookingDrawer } from './booking-drawer'
 import { BlockTimeModal } from './block-time-modal'
 import { EditBlockDialog } from './edit-block-dialog'
@@ -34,8 +35,12 @@ import { WHOLE_BUSINESS_LABEL } from '@/lib/professionals/scope-label'
 import {
   localDayKey,
   computeHourRange,
-  packLanes,
-  type PositionedItem,
+  buildTimelineAxis,
+  packSegmentLanes,
+  segmentItemsByLocalDays,
+  type PositionedSegment,
+  type TimelineAxis,
+  type TimelineSegment,
 } from '@/lib/calendar/timeline'
 import { bookingAppearance, type StatusIcon } from '@/lib/calendar/booking-appearance'
 import { bookingStatusLabel, displayedBookingStatus } from '@/lib/bookings/status-labels'
@@ -126,6 +131,17 @@ export function CalendarViews({
     setActiveBooking(booking)
   }
   const [activeBlock, setActiveBlock] = useState<CalendarTimeBlock | null>(null)
+  const blockTrigger = useRef<HTMLElement | null>(null)
+  function openBlock(block: CalendarTimeBlock) {
+    blockTrigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    setActiveBlock(block)
+  }
+  function restoreBlockFocus(event: Event) {
+    if (blockTrigger.current?.isConnected) {
+      event.preventDefault()
+      blockTrigger.current.focus()
+    }
+  }
 
   // Navegación previo/siguiente según la vista
   const prev =
@@ -209,7 +225,7 @@ export function CalendarViews({
       {view === 'week' && (
         <>
         <div className="min-[721px]:hidden">
-          <WeekAgenda focus={focus} personaId={selectedProfessionalId} bookings={bookings} timeBlocks={timeBlocks} timezone={timezone} now={now} onBookingClick={openBooking} onBlockClick={setActiveBlock} />
+          <WeekAgenda focus={focus} personaId={selectedProfessionalId} bookings={bookings} timeBlocks={timeBlocks} timezone={timezone} now={now} onBookingClick={openBooking} onBlockClick={openBlock} />
         </div>
         <div className="hidden min-[721px]:block">
         <TimelineView
@@ -223,7 +239,7 @@ export function CalendarViews({
           now={now}
           personaId={selectedProfessionalId}
           onBookingClick={openBooking}
-          onBlockClick={setActiveBlock}
+          onBlockClick={openBlock}
         />
         </div>
         </>
@@ -237,7 +253,7 @@ export function CalendarViews({
           now={now}
           personaId={selectedProfessionalId}
           onBookingClick={openBooking}
-          onBlockClick={setActiveBlock}
+          onBlockClick={openBlock}
         />
       )}
 
@@ -269,6 +285,7 @@ export function CalendarViews({
           timezone={timezone}
           open={!!activeBlock}
           onOpenChange={(o) => !o && setActiveBlock(null)}
+          onCloseAutoFocus={restoreBlockFocus}
         />
       ) : (
         <EditBlockDialog
@@ -277,6 +294,7 @@ export function CalendarViews({
           timezone={timezone}
           open={!!activeBlock}
           onOpenChange={(o) => !o && setActiveBlock(null)}
+          onCloseAutoFocus={restoreBlockFocus}
         />
       ))}
     </DashboardPanel>
@@ -295,24 +313,25 @@ function WeekAgenda({ focus, personaId, bookings, timeBlocks, timezone, now, onB
 }) {
   const v = useVocabulary()
   const days = eachDayOfInterval({ start: startOfWeek(focus, WEEK_STARTS), end: endOfWeek(focus, WEEK_STARTS) })
-  const touchesDay = (item: { startDateTime: string; endDateTime: string }, day: string) =>
-    localDayKey(new Date(item.startDateTime), timezone) <= day && localDayKey(new Date(new Date(item.endDateTime).getTime() - 1), timezone) >= day
+  const dayKeys = days.map((day) => format(day, 'yyyy-MM-dd'))
+  const bookingSegments = segmentItemsByLocalDays(bookings, dayKeys, timezone)
+  const blockSegments = segmentItemsByLocalDays(timeBlocks, dayKeys, timezone)
   return (
     <section aria-label="Agenda de la semana" className="divide-y divide-border">
       {days.map((day) => {
         const key = format(day, 'yyyy-MM-dd')
         const entries = [
-          ...bookings.filter((booking) => touchesDay(booking, key)).map((booking) => ({ key: `booking-${booking.id}`, start: booking.startDateTime, node: <button type="button" onClick={() => onBookingClick(booking)} className="w-full rounded-lg border border-border bg-card p-3 text-left hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring">
-            <span className="block text-sm font-semibold">{localTime(booking.startDateTime, timezone)} · {booking.customer?.name || v.Client}</span>
-            <span className="mt-1 block break-words text-sm text-muted-foreground">{bookingServiceName(booking)}</span>
-            <span className="mt-1 block text-xs text-muted-foreground">{bookingStatusLabel(displayedBookingStatus(booking, now))}{booking.professional?.name ? ` · ${booking.professional.name}` : ''}</span>
+          ...bookingSegments.filter((segment) => segment.dayKey === key).map((segment) => ({ key: `booking-${key}-${segment.item.id}`, start: segment.segmentStart.getTime(), node: <button type="button" onClick={() => onBookingClick(segment.item)} aria-label={`Abrir detalle de ${bookingSegmentLabel(segment, timezone, now, v.Client)}`} className="w-full rounded-lg border border-border bg-card p-3 text-left hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring">
+            <span className="block text-sm font-semibold">{segmentTimeRange(segment, timezone)} · {segment.item.customer?.name || v.Client}</span>
+            <span className="mt-1 block break-words text-sm text-muted-foreground">{bookingServiceName(segment.item)}</span>
+            <span className="mt-1 block text-xs text-muted-foreground">{bookingStatusLabel(displayedBookingStatus(segment.item, now))}{segment.item.professional?.name ? ` · ${segment.item.professional.name}` : ''}{continuationDescription(segment, timezone)}</span>
           </button> })),
-          ...timeBlocks.filter((block) => touchesDay(block, key)).map((block) => ({ key: `block-${block.id}`, start: block.startDateTime, node: <button type="button" onClick={() => onBlockClick(block)} className="w-full rounded-lg border border-dashed border-border bg-muted p-3 text-left hover:bg-muted/70 focus-visible:ring-2 focus-visible:ring-ring">
-            <span className="block text-sm font-semibold">{localTime(block.startDateTime, timezone)} · Bloqueo{block.professionalName ? ` de ${block.professionalName}` : ''}</span>
-            <span className="mt-1 block break-words text-sm text-muted-foreground">{block.reason || 'No disponible'}</span>
+          ...blockSegments.filter((segment) => segment.dayKey === key).map((segment) => ({ key: `block-${key}-${segment.item.id}`, start: segment.segmentStart.getTime(), node: <button type="button" onClick={() => onBlockClick(segment.item)} aria-label={`Abrir ${blockSegmentLabel(segment, timezone)}`} className="w-full rounded-lg border border-dashed border-border bg-muted p-3 text-left hover:bg-muted/70 focus-visible:ring-2 focus-visible:ring-ring">
+            <span className="block text-sm font-semibold">{segmentTimeRange(segment, timezone)} · Bloqueo{segment.item.professionalName ? ` de ${segment.item.professionalName}` : ''}</span>
+            <span className="mt-1 block break-words text-sm text-muted-foreground">{segment.item.reason || 'No disponible'}{continuationDescription(segment, timezone)}</span>
           </button> })),
-        ].sort((a, b) => a.start.localeCompare(b.start))
-        return <div key={key} className="py-3 first:pt-0">
+        ].sort((a, b) => a.start - b.start)
+        return <div key={key} data-calendar-day={key} className="py-3 first:pt-0">
           <Link href={calendarHref('day', key, personaId)} className="mb-2 flex min-h-11 items-center font-medium capitalize hover:text-primary">{format(day, "EEEE d 'de' MMMM", { locale: es })}</Link>
           {entries.length ? <ul className="space-y-2">{entries.map((entry) => <li key={entry.key}>{entry.node}</li>)}</ul> : <p className="text-sm text-muted-foreground">Sin citas ni bloqueos</p>}
         </div>
@@ -413,14 +432,14 @@ function MonthView({
   })
   const weekDays = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
 
-  const byDay: Record<string, TimelineBooking[]> = {}
-  for (const b of bookings) {
-    const key = localDayKey(new Date(b.startDateTime), timezone)
-    ;(byDay[key] ??= []).push(b)
+  const dayKeys = days.map((day) => format(day, 'yyyy-MM-dd'))
+  const byDay: Record<string, Array<TimelineSegment<TimelineBooking>>> = {}
+  for (const segment of segmentItemsByLocalDays(bookings, dayKeys, timezone)) {
+    ;(byDay[segment.dayKey] ??= []).push(segment)
   }
 
   return (
-    <div className="overflow-x-auto">
+    <div data-slot="calendar-timeline" className="overflow-x-auto">
       <div className="grid min-w-[560px] grid-cols-7 gap-1 md:gap-2">
         {weekDays.map((d) => (
           <div key={d} className="py-1 text-center text-xs font-semibold text-muted-foreground">
@@ -430,13 +449,14 @@ function MonthView({
         {days.map((day) => {
           const key = format(day, 'yyyy-MM-dd')
           const dayBookings = (byDay[key] || []).filter(
-            (b) => b.status !== 'cancelled' && b.status !== 'no_show',
+            ({ item }) => item.status !== 'cancelled' && item.status !== 'no_show',
           )
           const inMonth = isSameMonth(day, monthStart)
           const isToday = key === todayKey
           return (
             <div
               key={key}
+              data-calendar-day={key}
               className={`relative flex min-h-16 flex-col rounded-lg border p-1.5 transition hover:border-primary/50 md:min-h-24 ${
                 inMonth ? 'border-border bg-card' : 'border-transparent bg-muted/30 text-muted-foreground'
               }`}
@@ -457,18 +477,19 @@ function MonthView({
               </span>
               </Link>
               <div className="relative mt-1 space-y-1">
-                {dayBookings.slice(0, 3).map((b) => {
+                {dayBookings.slice(0, 3).map((segment) => {
+                  const b = segment.item
                   const appearance = bookingAppearance(b.service?.pastelColor, displayedBookingStatus(b, now))
                   const bookingLabel = `${b.customer?.name || bookingServiceName(b)} — ${localTime(b.startDateTime, timezone)}`
                   return (
                     <button
-                      key={b.id}
+                      key={`${key}-${b.id}`}
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation()
                         onBookingClick(b)
                       }}
-                      aria-label={bookingLabel}
+                      aria-label={`${bookingLabel}${continuationDescription(segment, timezone)}`}
                       className="flex min-h-11 min-w-11 w-full items-center gap-1 rounded px-1 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1"
                       style={{
                         backgroundColor: appearance.background,
@@ -522,91 +543,290 @@ function TimelineView({
 }) {
   // Del mismo reloj, no de un prop aparte: ver `now` en `CalendarViewsProps`.
   const todayKey = localDayKey(now, timezone)
-  const allItems = [...bookings, ...timeBlocks]
-  const { startHour, endHour } = computeHourRange(allItems, timezone)
-  const hours = Array.from({ length: endHour - startHour }, (_, i) => startHour + i)
-  const bodyHeight = (endHour - startHour) * HOUR_HEIGHT
+  const dayKeys = days.map((day) => format(day, 'yyyy-MM-dd'))
+  const allItems: CalendarTimelineItem[] = [
+    ...bookings.map((value) => ({ kind: 'booking' as const, value, startDateTime: value.startDateTime, endDateTime: value.endDateTime })),
+    ...timeBlocks.map((value) => ({ kind: 'block' as const, value, startDateTime: value.startDateTime, endDateTime: value.endDateTime })),
+  ]
+  const segments = segmentItemsByLocalDays(allItems, dayKeys, timezone)
+  const hasClockTransition = dayKeys.some((dayKey) => buildTimelineAxis(dayKey, [], timezone, 0, 24).durationMin !== 24 * 60)
+  const sharedRange = computeHourRange(segments.map((segment) => ({
+    startDateTime: segment.segmentStart.toISOString(),
+    endDateTime: segment.segmentEnd.toISOString(),
+  })), timezone)
+  const timelineDays = days.map((day) => {
+    const dayKey = format(day, 'yyyy-MM-dd')
+    const daySegments = segments.filter((segment) => segment.dayKey === dayKey)
+    const axis = buildTimelineAxis(
+      dayKey,
+      daySegments,
+      timezone,
+      hasClockTransition ? 8 : sharedRange.startHour,
+      hasClockTransition ? 20 : sharedRange.endHour,
+    )
+    const positioned = packSegmentLanes(daySegments, axis.start)
+    const laneCount = Math.max(1, ...positioned.map(p => p.lanes))
+    return { day, dayKey, positioned, laneCount, axis }
+  })
 
   return (
-    <div className="overflow-x-auto">
-      <div className="flex min-w-fit">
-        {/* Eje de horas */}
-        <div className="w-12 shrink-0 pt-11">
-          {hours.map((h) => (
-            <div key={h} style={{ height: HOUR_HEIGHT }} className="relative">
-              <span className="absolute -top-2 right-1 text-xs text-muted-foreground">
-                {String(h).padStart(2, '0')}:00
-              </span>
-            </div>
-          ))}
-        </div>
-
-        {/* Columnas de días */}
-        <div className="flex flex-1">
-          {days.map((day) => {
-            const dayKey = format(day, 'yyyy-MM-dd')
-            const isToday = dayKey === todayKey
-            const dayBookings = bookings.filter((b) => localDayKey(new Date(b.startDateTime), timezone) === dayKey)
-            const dayBlocks = timeBlocks.filter((tb) => localDayKey(new Date(tb.startDateTime), timezone) === dayKey)
-            // Pack the actual hit areas together, including blocks. Enlarging only
-            // the CSS height or packing each type separately makes controls overlap.
-            // The original item timestamps are retained for every action/dialog.
-            const positioned = packLanes([
-              ...dayBookings.map(item => ({ ...item, kind: 'booking' as const })),
-              ...dayBlocks.map(item => ({ ...item, kind: 'block' as const })),
-            ], timezone, startHour, (TARGET_SIZE + 2) * 60 / HOUR_HEIGHT)
-            const laneCount = Math.max(1, ...positioned.map(p => p.lanes))
-            const dayHeight = Math.max(bodyHeight, ...positioned.map(p => (p.topMin + p.heightMin) / 60 * HOUR_HEIGHT))
-
-            return (
-              <div
-                key={dayKey}
-                className={`min-w-32 flex-1 border-l border-border ${days.length > 1 ? '' : 'min-w-0'}`}
-                style={{ minWidth: Math.max(128, laneCount * (MIN_LANE_WIDTH + EVENT_GAP) + 2) }}
-              >
-                {/* Cabecera del día */}
-                <Link
-                  href={calendarHref('day', dayKey, personaId)}
-                  className="flex min-h-11 items-center justify-center gap-1.5 border-b border-border text-xs font-medium hover:bg-muted/40"
-                >
-                  <span className="capitalize text-muted-foreground">{format(day, 'EEE', { locale: es })}</span>
-                  <span
-                    className={
-                      isToday
-                        ? 'flex size-5 items-center justify-center rounded-full bg-primary text-[11px] text-primary-foreground'
-                        : 'text-foreground'
-                    }
-                  >
-                    {format(day, 'd')}
-                  </span>
-                </Link>
-
-                {/* Cuerpo con líneas de hora + bloques */}
-                <div className="relative" style={{ height: dayHeight }}>
-                  {hours.map((h, idx) => (
-                    <div
-                      key={h}
-                      className="absolute inset-x-0 border-b border-border/40"
-                      style={{ top: idx * HOUR_HEIGHT, height: HOUR_HEIGHT }}
-                    />
-                  ))}
-
-                  {positioned.map((p) => p.item.kind === 'booking' ? (
-                    <BookingBlock
-                      key={`booking-${p.item.id}`}
-                      p={{ ...p, item: p.item }}
-                      timezone={timezone}
-                      now={now}
-                      onClick={() => onBookingClick(dayBookings.find(b => b.id === p.item.id)!)}
-                    />
-                  ) : <BlockBand key={`block-${p.item.id}`} p={{ ...p, item: p.item }} onClick={() => onBlockClick(dayBlocks.find(b => b.id === p.item.id)!)} />)}
-                </div>
+    <>
+      <BriefEventsDisclosure
+        days={timelineDays}
+        timezone={timezone}
+        now={now}
+        onBookingClick={onBookingClick}
+        onBlockClick={onBlockClick}
+      />
+      <div className="overflow-x-auto">
+        {hasClockTransition ? (
+          <div className={`flex min-w-fit gap-3 ${days.length === 1 ? 'w-full' : ''}`}>
+            {timelineDays.map((timelineDay) => (
+              <div key={timelineDay.dayKey} className={`flex ${days.length === 1 ? 'w-full' : ''}`}>
+                <HourAxis axis={timelineDay.axis} />
+                <TimelineDayColumn
+                  data={timelineDay}
+                  todayKey={todayKey}
+                  timezone={timezone}
+                  now={now}
+                  personaId={personaId}
+                  totalDays={days.length}
+                  onBookingClick={onBookingClick}
+                  onBlockClick={onBlockClick}
+                />
               </div>
-            )
-          })}
+            ))}
+          </div>
+        ) : (
+          <div className="flex min-w-fit">
+            <HourAxis axis={timelineDays[0].axis} />
+            <div className="flex flex-1">
+              {timelineDays.map((timelineDay) => (
+                <TimelineDayColumn
+                  key={timelineDay.dayKey}
+                  data={timelineDay}
+                  todayKey={todayKey}
+                  timezone={timezone}
+                  now={now}
+                  personaId={personaId}
+                  totalDays={days.length}
+                  onBookingClick={onBookingClick}
+                  onBlockClick={onBlockClick}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </>
+  )
+}
+
+type CalendarTimelineItem =
+  | { kind: 'booking'; value: TimelineBooking; startDateTime: string; endDateTime: string }
+  | { kind: 'block'; value: CalendarTimeBlock; startDateTime: string; endDateTime: string }
+
+type BookingTimelineItem = Extract<CalendarTimelineItem, { kind: 'booking' }>
+type BlockTimelineItem = Extract<CalendarTimelineItem, { kind: 'block' }>
+type PositionedCalendarItem = PositionedSegment<CalendarTimelineItem>
+
+function isBookingPosition(position: PositionedCalendarItem): position is PositionedSegment<BookingTimelineItem> {
+  return position.segment.item.kind === 'booking'
+}
+
+function isBlockPosition(position: PositionedCalendarItem): position is PositionedSegment<BlockTimelineItem> {
+  return position.segment.item.kind === 'block'
+}
+
+type TimelineDayData = {
+  day: Date
+  dayKey: string
+  positioned: PositionedCalendarItem[]
+  laneCount: number
+  axis: TimelineAxis
+}
+
+function HourAxis({ axis }: { axis: TimelineAxis }) {
+  const hasOffsetLabels = axis.ticks.some((tick) => tick.label.includes('('))
+  return (
+    <div className={`${hasOffsetLabels ? 'w-24' : 'w-12'} shrink-0 pt-11`}>
+      {axis.ticks.map((tick) => (
+        <div key={tick.instant.toISOString()} style={{ height: HOUR_HEIGHT }} className="relative">
+          <span data-slot="timeline-tick" className="absolute -top-2 right-1 whitespace-nowrap text-xs text-muted-foreground">
+            {tick.label}
+          </span>
         </div>
+      ))}
+    </div>
+  )
+}
+
+function TimelineDayColumn({
+  data,
+  todayKey,
+  timezone,
+  now,
+  personaId,
+  totalDays,
+  onBookingClick,
+  onBlockClick,
+}: {
+  data: TimelineDayData
+  todayKey: string
+  timezone: string
+  now: Date
+  personaId: string | null
+  totalDays: number
+  onBookingClick: (booking: TimelineBooking) => void
+  onBlockClick: (block: CalendarTimeBlock) => void
+}) {
+  const { day, dayKey, positioned, laneCount, axis } = data
+  const isToday = dayKey === todayKey
+  return (
+    <div
+      data-calendar-day={dayKey}
+      className={`min-w-32 flex-1 border-l border-border ${totalDays > 1 ? '' : 'min-w-0'}`}
+      style={{ minWidth: Math.max(128, laneCount * (MIN_LANE_WIDTH + EVENT_GAP) + 2) }}
+    >
+      <Link
+        href={calendarHref('day', dayKey, personaId)}
+        className="flex min-h-11 items-center justify-center gap-1.5 border-b border-border text-xs font-medium hover:bg-muted/40"
+      >
+        <span className="capitalize text-muted-foreground">{format(day, 'EEE', { locale: es })}</span>
+        <span className={isToday ? 'flex size-5 items-center justify-center rounded-full bg-primary text-[11px] text-primary-foreground' : 'text-foreground'}>
+          {format(day, 'd')}
+        </span>
+      </Link>
+      <div className="relative" style={{ height: axis.durationMin / 60 * HOUR_HEIGHT }}>
+        {axis.ticks.map((tick) => (
+          <div
+            key={tick.instant.toISOString()}
+            className="absolute inset-x-0 border-b border-border/40"
+            style={{ top: tick.offsetMin / 60 * HOUR_HEIGHT, height: HOUR_HEIGHT }}
+          />
+        ))}
+        {positioned.map((position) => {
+          if (isBookingPosition(position)) {
+            const booking = position.segment.item.value
+            return <BookingBlock
+              key={`booking-${dayKey}-${booking.id}`}
+              p={position}
+              timezone={timezone}
+              now={now}
+              interactive={!isBriefEvent(position)}
+              onClick={() => onBookingClick(booking)}
+            />
+          }
+          if (!isBlockPosition(position)) return null
+          const block = position.segment.item.value
+          return <BlockBand
+            key={`block-${dayKey}-${block.id}`}
+            p={position}
+            timezone={timezone}
+            interactive={!isBriefEvent(position)}
+            onClick={() => onBlockClick(block)}
+          />
+        })}
       </div>
     </div>
+  )
+}
+
+function eventHeight(p: Pick<PositionedCalendarItem, 'heightMin'>): number {
+  return p.heightMin / 60 * HOUR_HEIGHT
+}
+
+function isBriefEvent(p: Pick<PositionedCalendarItem, 'heightMin'>): boolean {
+  return eventHeight(p) < TARGET_SIZE
+}
+
+function BriefEventsDisclosure({
+  days,
+  timezone,
+  now,
+  onBookingClick,
+  onBlockClick,
+}: {
+  days: Array<{
+    day: Date
+    dayKey: string
+    positioned: PositionedCalendarItem[]
+  }>
+  timezone: string
+  now: Date
+  onBookingClick: (booking: TimelineBooking) => void
+  onBlockClick: (block: CalendarTimeBlock) => void
+}) {
+  const v = useVocabulary()
+  const briefDays = days.map(({ day, dayKey, positioned }) => ({
+    day,
+    dayKey,
+    items: positioned.filter(isBriefEvent),
+  })).filter(({ items }) => items.length > 0)
+  const count = new Set(briefDays.flatMap(({ items }) => items.map((position) => {
+    const item = position.segment.item
+    return `${item.kind}-${item.value.id}`
+  }))).size
+  if (count === 0) return null
+
+  return (
+    <details data-slot="brief-calendar-events" className="group mb-4 rounded-lg border border-border bg-muted/30">
+      <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 px-3 py-2 text-sm font-semibold text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 [&::-webkit-details-marker]:hidden">
+        <span>Citas breves y bloqueos ({count})</span>
+        <ChevronDown aria-hidden="true" className="ml-auto size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
+      </summary>
+      <div className="space-y-4 border-t border-border p-3">
+        {briefDays.map(({ day, dayKey, items }) => (
+          <section key={dayKey} data-calendar-day={dayKey} aria-label={format(day, "EEEE d 'de' MMMM", { locale: es })}>
+            <h4 className="mb-2 text-xs font-semibold capitalize text-muted-foreground">
+              {format(day, "EEEE d 'de' MMMM", { locale: es })}
+            </h4>
+            <ul className="space-y-2">
+              {items.map((p) => {
+                if (p.segment.item.kind === 'booking') {
+                  const booking = p.segment.item.value
+                  const status = bookingStatusLabel(displayedBookingStatus(booking, now))
+                  const customer = booking.customer?.name || v.Client
+                  const professional = booking.professional?.name ? `Atiende: ${booking.professional.name}` : 'Sin persona asignada'
+                  const label = `${segmentTimeRange(p.segment, timezone)} · ${customer} · ${bookingServiceName(booking)} · ${professional} · ${status}${continuationDescription(p.segment, timezone)}`
+                  return (
+                    <li key={`booking-${dayKey}-${booking.id}`}>
+                      <button
+                        type="button"
+                        onClick={() => onBookingClick(booking)}
+                        aria-label={`Abrir detalle de ${label}`}
+                        className="flex min-h-11 w-full cursor-pointer flex-col justify-center rounded-lg border border-border bg-card px-3 py-2 text-left hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        <span className="text-sm font-semibold text-foreground">{segmentTimeRange(p.segment, timezone)} · {customer}</span>
+                        <span className="text-xs text-muted-foreground">{bookingServiceName(booking)} · {professional} · {status}{continuationDescription(p.segment, timezone)}</span>
+                      </button>
+                    </li>
+                  )
+                }
+
+                const block = p.segment.item.value
+                const professional = block.professionalName ? `Atiende: ${block.professionalName}` : 'Todo el negocio'
+                const reason = block.reason || 'No disponible'
+                const label = `${segmentTimeRange(p.segment, timezone)} · ${reason} · ${professional} · Bloqueo${continuationDescription(p.segment, timezone)}`
+                return (
+                  <li key={`block-${dayKey}-${block.id}`}>
+                    <button
+                      type="button"
+                      onClick={() => onBlockClick(block)}
+                      aria-label={`Abrir ${label}`}
+                      className="flex min-h-11 w-full cursor-pointer flex-col justify-center rounded-lg border border-dashed border-border bg-card px-3 py-2 text-left hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <span className="text-sm font-semibold text-foreground">{segmentTimeRange(p.segment, timezone)} · {reason}</span>
+                      <span className="text-xs text-muted-foreground">{professional} · Bloqueo{continuationDescription(p.segment, timezone)}</span>
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          </section>
+        ))}
+      </div>
+    </details>
   )
 }
 
@@ -614,15 +834,18 @@ function BookingBlock({
   p,
   timezone,
   now,
+  interactive,
   onClick,
 }: {
-  p: PositionedItem<TimelineBooking>
+  p: PositionedSegment<BookingTimelineItem>
   timezone: string
   /** El reloj del servidor: ver `now` en `CalendarViewsProps`. */
   now: Date
+  interactive: boolean
   onClick: () => void
 }) {
-  const b = p.item
+  const segment = p.segment
+  const b = segment.item.value
   const widthPct = 100 / p.lanes
   const leftPct = p.lane * widthPct
   // El chip habla del estado DERIVADO (ver displayedBookingStatus): con el
@@ -632,29 +855,15 @@ function BookingBlock({
   const shownStatus = displayedBookingStatus(b, now)
   const appearance = bookingAppearance(b.service?.pastelColor, shownStatus)
   const Icon = statusIcons[appearance.icon]
-  const start = localTime(b.startDateTime, timezone)
+  const start = localTime(segment.segmentStart, timezone)
+  const timeRange = segmentTimeRange(segment, timezone)
   const strike = appearance.strikeThrough ? 'line-through' : ''
   const v = useVocabulary()
   const statusLabel = bookingStatusLabel(shownStatus)
-  const ariaLabel = `${statusLabel} — ${b.customer?.name || v.Client} — ${start}`
+  const ariaLabel = `${statusLabel} — ${b.customer?.name || v.Client} — ${bookingServiceName(b)}${b.professional?.name ? ` — Atiende: ${b.professional.name}` : ''} — ${timeRange}${continuationDescription(segment, timezone)}`
 
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label={ariaLabel}
-      className="absolute overflow-hidden rounded-md border px-1.5 py-1 text-left text-xs leading-tight transition-colors hover:z-10 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1"
-      style={{
-        top: (p.topMin / 60) * HOUR_HEIGHT,
-        height: Math.max((p.heightMin / 60) * HOUR_HEIGHT - 2, TARGET_SIZE),
-        left: `calc(${leftPct}% + 2px)`,
-        width: `calc(${widthPct}% - 4px)`,
-        backgroundColor: appearance.background,
-        borderColor: appearance.borderColor,
-        color: appearance.textColor,
-        opacity: appearance.opacity,
-      }}
-    >
+  const content = (
+    <>
       <span
         className="absolute right-0.5 top-0.5 flex size-3 items-center justify-center rounded-full ring-1 ring-white"
         style={{ backgroundColor: appearance.dotColor }}
@@ -665,49 +874,138 @@ function BookingBlock({
       <div className={`font-semibold ${strike}`}>{start}</div>
       <div className={`truncate ${strike}`}>{b.customer?.name || v.Client}</div>
       {p.heightMin >= (b.professional ? 75 : 60) && bookingServiceName(b) && <div className="truncate">{bookingServiceName(b)}</div>}
-      {/* Quién atiende, si el chip tiene alto para una línea más. Con el filtro
-          en "todo el equipo" es lo que distingue dos citas a la misma hora. */}
       {p.heightMin >= 60 && b.professional && (
         <div className={`truncate ${strike}`}>{b.professional.name}</div>
       )}
+    </>
+  )
+
+  const style = {
+    top: (p.topMin / 60) * HOUR_HEIGHT,
+    height: eventHeight(p),
+    left: `calc(${leftPct}% + 2px)`,
+    width: `calc(${widthPct}% - 4px)`,
+    backgroundColor: appearance.background,
+    borderColor: appearance.borderColor,
+    color: appearance.textColor,
+    opacity: appearance.opacity,
+  }
+
+  if (!interactive) {
+    return (
+      <div
+        role="img"
+        data-booking-id={b.id}
+        aria-label={ariaLabel}
+        className="pointer-events-none absolute overflow-hidden rounded-md border px-1.5 text-left text-xs leading-tight"
+        style={style}
+      >
+        {content}
+      </div>
+    )
+  }
+
+  return (
+    <button
+      type="button"
+      data-booking-id={b.id}
+      onClick={onClick}
+      aria-label={ariaLabel}
+      className="absolute cursor-pointer overflow-hidden rounded-md border px-1.5 py-1 text-left text-xs leading-tight transition-colors hover:z-10 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1"
+      style={style}
+    >
+      {content}
     </button>
   )
 }
 
-function BlockBand({ p, onClick }: { p: PositionedItem<CalendarTimeBlock>; onClick: () => void }) {
-  const reason = p.item.reason || 'Bloqueado'
+function BlockBand({ p, timezone, interactive, onClick }: { p: PositionedSegment<BlockTimelineItem>; timezone: string; interactive: boolean; onClick: () => void }) {
+  const segment = p.segment
+  const block = segment.item.value
+  const reason = block.reason || 'Bloqueado'
   // El dueño va ADELANTE del motivo porque la banda es angosta y trunca por la derecha:
   // "Ana · Almuer…" sigue diciendo lo importante, "Almuerzo · A…" no. Sin nombre el
   // bloqueo es del negocio y cierra para todos, que es como se leía siempre.
   // "de Ana" en las dos formas del aria-label: con motivo ("Bloqueo de Ana: Almuerzo") y
   // sin motivo ("Bloqueo de horario de Ana"). Sin dueño queda igual que siempre.
-  const deQuien = p.item.professionalName ? ` de ${p.item.professionalName}` : ''
-  const texto = p.item.professionalName ? `${p.item.professionalName} · ${reason}` : reason
-  const ariaLabel = p.item.reason ? `Bloqueo${deQuien}: ${p.item.reason}` : `Bloqueo de horario${deQuien}`
+  const deQuien = block.professionalName ? ` de ${block.professionalName}` : ''
+  const texto = block.professionalName ? `${block.professionalName} · ${reason}` : reason
+  const ariaLabel = `${block.reason ? `Bloqueo${deQuien}: ${block.reason}` : `Bloqueo de horario${deQuien}`} — ${segmentTimeRange(segment, timezone)}${continuationDescription(segment, timezone)}`
+  const style = {
+    top: (p.topMin / 60) * HOUR_HEIGHT,
+    height: eventHeight(p),
+    left: `calc(${p.lane * 100 / p.lanes}% + 2px)`,
+    width: `calc(${100 / p.lanes}% - 4px)`,
+  }
+
+  if (!interactive) {
+    return (
+      <div
+        role="img"
+        data-time-block-id={block.id}
+        aria-label={ariaLabel}
+        className="pointer-events-none absolute overflow-hidden rounded-md border border-dashed border-muted-foreground/40 bg-muted px-1.5 text-left text-xs text-muted-foreground"
+        style={style}
+      >
+        {texto}
+      </div>
+    )
+  }
+
   return (
     <button
       type="button"
+      data-time-block-id={block.id}
       onClick={onClick}
       aria-label={ariaLabel}
-      className="absolute overflow-hidden rounded-md border border-dashed border-muted-foreground/40 bg-muted px-1.5 py-1 text-left text-xs text-muted-foreground transition-colors hover:border-muted-foreground/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1"
-      style={{
-        top: (p.topMin / 60) * HOUR_HEIGHT,
-        height: Math.max((p.heightMin / 60) * HOUR_HEIGHT - 2, TARGET_SIZE),
-        left: `calc(${p.lane * 100 / p.lanes}% + 2px)`,
-        width: `calc(${100 / p.lanes}% - 4px)`,
-      }}
+      className="absolute cursor-pointer overflow-hidden rounded-md border border-dashed border-muted-foreground/40 bg-muted px-1.5 py-1 text-left text-xs text-muted-foreground transition-colors hover:border-muted-foreground/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1"
+      style={style}
     >
       {texto}
     </button>
   )
 }
 
-function localTime(iso: string, timezone: string): string {
+function localTime(value: string | Date, timezone: string): string {
   // Pequeño helper local para evitar importar date-fns-tz en el cliente solo por esto.
-  return new Date(iso).toLocaleTimeString('es-CL', {
+  return new Date(value).toLocaleTimeString('es-CL', {
     hour: '2-digit',
     minute: '2-digit',
     hourCycle: 'h23',
     timeZone: timezone,
   })
+}
+
+function segmentTimeRange(segment: TimelineSegment<{ startDateTime: string; endDateTime: string }>, timezone: string): string {
+  return `${localTime(segment.segmentStart, timezone)}–${localTime(segment.segmentEnd, timezone)}`
+}
+
+function originalDateTimeRange(item: { startDateTime: string; endDateTime: string }, timezone: string): string {
+  const formatValue = (value: string) => formatInTimeZone(new Date(value), timezone, "d MMM HH:mm (xxx)", { locale: es })
+  return `${formatValue(item.startDateTime)}–${formatValue(item.endDateTime)}`
+}
+
+function continuationDescription<T extends { startDateTime: string; endDateTime: string }>(segment: TimelineSegment<T>, timezone: string): string {
+  if (!segment.continuesFromPreviousDay && !segment.continuesToNextDay) return ''
+  const direction = segment.continuesFromPreviousDay && segment.continuesToNextDay
+    ? 'Continúa desde el día anterior y al día siguiente'
+    : segment.continuesFromPreviousDay
+      ? 'Continúa desde el día anterior'
+      : 'Continúa al día siguiente'
+  return ` · ${direction} · Horario completo: ${originalDateTimeRange(segment.item, timezone)}`
+}
+
+function bookingSegmentLabel(
+  segment: TimelineSegment<TimelineBooking>,
+  timezone: string,
+  now: Date,
+  fallbackCustomer: string,
+): string {
+  const booking = segment.item
+  return `${segmentTimeRange(segment, timezone)} · ${booking.customer?.name || fallbackCustomer} · ${bookingServiceName(booking)} · ${bookingStatusLabel(displayedBookingStatus(booking, now))}${continuationDescription(segment, timezone)}`
+}
+
+function blockSegmentLabel(segment: TimelineSegment<CalendarTimeBlock>, timezone: string): string {
+  const block = segment.item
+  return `${segmentTimeRange(segment, timezone)} · ${block.reason || 'No disponible'} · ${block.professionalName ? `Atiende: ${block.professionalName}` : 'Todo el negocio'} · Bloqueo${continuationDescription(segment, timezone)}`
 }

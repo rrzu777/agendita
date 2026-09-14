@@ -13,27 +13,30 @@ import { isManualPaymentAllowed, manualPaymentBlockedReason, type ManualPaymentB
 import { ReviveBookingButton } from './revive-booking-dialog'
 import { getReviveReopenState } from './revive-utils'
 import { BookingStatusButton } from './booking-status-button'
+import {
+  BookingContactButtons,
+  BookingContactFeedback,
+  useBookingContactController,
+  type BookingContactData,
+} from './booking-contact-buttons'
 
 type RowBooking = ManualPaymentBooking & {
   startDateTime: Date | string
-  paymentMethod: string | null
+  paymentMethod?: string | null
   customer: { name: string; email?: string | null } | null
 }
 
 export function BookingRowActions({
   booking,
   businessCurrency,
-  contactMenu,
-  contactInline,
+  contactData,
   transferEnabled,
   now,
 }: {
   booking: RowBooking
   businessCurrency: string
-  /** Ítems Radix para la fila accionable: no usar fuera de TableActions. */
-  contactMenu?: React.ReactNode
-  /** Controles compactos para estados sin menú (expirada/terminal). */
-  contactInline?: React.ReactNode
+  /** Datos estructurados: este componente decide una sola vez qué contacto es veraz. */
+  contactData?: BookingContactData
   transferEnabled?: boolean
   /** El reloj del SERVIDOR de este render. Requerido: este componente es
    *  cliente y sale en el HTML de la tabla, así que con un reloj propio el
@@ -43,45 +46,44 @@ export function BookingRowActions({
 }) {
   const [cancelOpen, setCancelOpen] = useState(false)
   const [payOpen, setPayOpen] = useState(false)
+  const contactAvailability = {
+    status: booking.status,
+    paymentStatus: booking.paymentStatus,
+    holdExpiresAt: booking.holdExpiresAt,
+    now,
+  }
+  const contactController = useBookingContactController(contactData ?? null, contactAvailability)
 
   const canPay = isManualPaymentAllowed(booking, now)
   const blockedReason = manualPaymentBlockedReason(booking, now)
   const isConfirmed = booking.status === 'confirmed'
   const isPending = booking.status === 'pending_payment'
-  // Solicitud esperando el visto bueno del negocio (confirmación manual).
   const isRequest = booking.status === 'pending_confirmation'
   const isActionable = isConfirmed || isPending || isRequest
   const isExpired = booking.status === 'expired'
-  // Recobro (spec FU-B4b-3 §6): una completed con saldo (post-chargeback o saldo
-  // tras atender) debe poder cobrarse desde la tabla — solo "Cobrar", sin
-  // cancelar/reprogramar.
+  // Recobro (spec FU-B4b-3 §6): completed con saldo puede cobrar, pero no
+  // vuelve a adquirir acciones de ciclo de vida como cancelar/reprogramar.
   const isCompletedWithBalance = booking.status === 'completed' && canPay
 
-  if (isExpired) {
-    const { canReopen, reason } = getReviveReopenState(booking, !!transferEnabled, now)
-    return (
-      <div className="flex items-center justify-end gap-2">
-        {contactInline}
-        <ReviveBookingButton
-          bookingId={booking.id}
-          serviceName={bookingServiceName(booking)}
-          customerName={booking.customer?.name}
-          customerHasEmail={!!booking.customer?.email}
-          canReopen={canReopen}
-          reopenDisabledReason={reason}
-          triggerSize="sm"
-        />
-      </div>
+  const primary = isExpired ? (() => {
+    const { canReopen, reason } = getReviveReopenState(
+      { startDateTime: booking.startDateTime, paymentMethod: booking.paymentMethod ?? null },
+      !!transferEnabled,
+      now,
     )
-  }
-
-  if (!isActionable && !isCompletedWithBalance) {
-    return contactInline ? <div className="flex justify-end">{contactInline}</div> : null
-  }
-
-  const primary = isRequest ? (
-    // Sólida (no outline): aceptar es la acción que el negocio viene a hacer a
-    // esta fila, y la solicitud ocupa el cupo hasta que responda.
+    return (
+      <ReviveBookingButton
+        bookingId={booking.id}
+        serviceName={bookingServiceName(booking)}
+        customerName={booking.customer?.name}
+        customerHasEmail={!!booking.customer?.email}
+        canReopen={canReopen}
+        reopenDisabledReason={reason}
+        triggerSize="sm"
+        triggerClassName="min-h-11"
+      />
+    )
+  })() : isRequest ? (
     <BookingStatusButton
       bookingId={booking.id}
       status="confirmed"
@@ -89,6 +91,7 @@ export function BookingRowActions({
       pendingLabel="Aceptando…"
       errorLabel="Error al aceptar"
       variant="default"
+      className="min-h-11"
     />
   ) : isConfirmed ? (
     <BookingStatusButton
@@ -97,46 +100,62 @@ export function BookingRowActions({
       label="Completar"
       pendingLabel="Completando…"
       errorLabel="Error al completar"
+      className="min-h-11"
     />
-  ) : canPay ? (
-    <Button type="button" size="sm" variant="outline" onClick={() => setPayOpen(true)}>
+  ) : (isPending || isCompletedWithBalance) && canPay ? (
+    <Button type="button" size="sm" variant="outline" className="min-h-11" onClick={() => setPayOpen(true)}>
       Cobrar
     </Button>
-  ) : blockedReason ? (
-    // Deshabilitado y NO ausente: el server rechaza este cobro, pero si el botón
-    // simplemente desaparece la dueña no distingue eso de una app rota. El
-    // motivo va en el title —la fila no tiene lugar para un párrafo—; la card
-    // móvil, que sí lo tiene, lo muestra escrito.
-    <Button type="button" size="sm" variant="outline" disabled title={blockedReason}>
+  ) : isPending && blockedReason ? (
+    <Button type="button" size="sm" variant="outline" className="min-h-11" disabled title={blockedReason}>
       Cobrar
     </Button>
   ) : null
 
+  const hasMenu = !!contactData || isActionable
+  if (!primary && !hasMenu) return null
+
   return (
-    <>
-      <TableActions data-tour-id="bookings-actions" primary={primary}>
-        {contactMenu}
+    <div className="space-y-1">
+      <TableActions
+        data-tour-id="bookings-actions"
+        className="flex items-center justify-end gap-1 [&_[data-slot=button]]:min-h-11 [&_[data-slot=button]]:min-w-11"
+        triggerClassName="size-11"
+        primary={primary}
+      >
+        {contactData && (
+          <BookingContactButtons
+            variant="menu"
+            booking={contactData}
+            availability={contactAvailability}
+            controller={contactController}
+          />
+        )}
         {isConfirmed && (
-          <DropdownMenuItem asChild>
-            <Link href={`/dashboard/bookings/${booking.id}/reschedule`}>
+          <DropdownMenuItem asChild className="min-h-11 cursor-pointer">
+            <Link href={`/dashboard/bookings/${booking.id}/reschedule`} prefetch={false}>
               <RefreshCw className="size-4" /> Reprogramar
             </Link>
           </DropdownMenuItem>
         )}
         {isConfirmed && canPay && (
-          <DropdownMenuItem onSelect={(e) => { e.preventDefault(); setPayOpen(true) }}>
+          <DropdownMenuItem className="min-h-11 cursor-pointer" onSelect={(event) => { event.preventDefault(); setPayOpen(true) }}>
             Registrar pago
           </DropdownMenuItem>
         )}
         {isActionable && (
           <DropdownMenuItem
+            className="min-h-11 cursor-pointer"
             variant="destructive"
-            onSelect={(e) => { e.preventDefault(); setCancelOpen(true) }}
+            onSelect={(event) => { event.preventDefault(); setCancelOpen(true) }}
           >
             {isRequest ? 'Rechazar' : 'Cancelar'}
           </DropdownMenuItem>
         )}
       </TableActions>
+
+      {blockedReason && <p className="max-w-80 text-right text-xs text-muted-foreground">{blockedReason}</p>}
+      <BookingContactFeedback controller={contactController} />
 
       <CancelBookingButton
         bookingId={booking.id}
@@ -156,6 +175,6 @@ export function BookingRowActions({
           onOpenChange={setPayOpen}
         />
       )}
-    </>
+    </div>
   )
 }

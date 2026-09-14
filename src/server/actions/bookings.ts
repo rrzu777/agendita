@@ -1159,7 +1159,10 @@ export async function getBookingsByRange(start: Date, end: Date) {
   return prisma.booking.findMany({
     where: {
       businessId,
-      startDateTime: { gte: start, lte: end },
+      // Solape half-open contra el período visible: también trae una reserva
+      // que comenzó antes pero sigue vigente dentro del calendario.
+      startDateTime: { lte: end },
+      endDateTime: { gt: start },
     },
     orderBy: { startDateTime: 'asc' },
     include: {

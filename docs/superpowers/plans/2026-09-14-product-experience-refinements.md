@@ -25,7 +25,7 @@
 |---|---|---|
 | 1 | Non-blocking onboarding tabs | Complete locally: 6aaf438; review and re-review clean |
 | 2 | Public service proportions + shared picker/favorites | Complete locally; independent review clean, 34 compiled-browser cases passed; not deployed |
-| 3 | Booking action menu + truthful calendar geometry | Pending |
+| 3 | Booking action menu + truthful calendar geometry | Complete locally: review/re-review clean and final 20 compiled-browser cases passed; not deployed |
 | 4 | Contact deduplication and reviewed merge | Pending |
 | 5 | Compact chart-led metrics | Pending |
 | 6 | Loyalty information architecture | Pending |
@@ -98,11 +98,13 @@ Verification: independent review and scoped re-review closed all findings. Root 
 **State truth:** confirmation is available only for an effectively confirmed booking; appointment reminders only while effectively confirmed and still upcoming, using the same server `now` as the row/drawer. Cancelled/expired/completed/no-show and pending requests must not produce a confirmation or reminder that claims the appointment is confirmed. Retain a neutral WhatsApp contact link and internal copy-summary access where contact exists. Apply the same policy to row/card/drawer and include both copy and send variants. Compute effective state from the existing status/hold/approval helpers, not a new client clock. Task 7 later customizes text, without weakening these guards.
 
 **Proof steps:**
-- [ ] RED unit and real-browser geometry for 11:30–11:50 then 12:00–13:30: one lane each, first painted bottom before noon, no fake duration extension. Genuine 11:30–12:15 / 12:00–13:30 stays two lanes. Include short blocks interleaved with bookings, 5-minute events, end-of-day and Santiago timezone fixtures.
-- [ ] Replace the old test demanding 44px *painted* boxes for five-minute events with true geometry plus reachable measured 44px equivalent actions. This is a changed product contract, not permission to drop access coverage. Verify original timestamps reach the right drawer, keyboard opening and restored focus for both a long event and the brief-event list.
-- [ ] Cover confirmed/pending-payment/pending-approval/expired/cancelled/completed/no-show rows and mobile cards: primary + one menu at most, each action retained in its valid state, no active-looking confirmations/reminders on terminal or stale records. Open the actual Radix menu in tests instead of asserting source strings only.
-- [ ] Real browser clipboard success and failure survive menu closure; no outgoing WhatsApp sends or real payment/lifecycle mutations for QA. Compare tablet/desktop calendar geometry and narrow mobile list, long labels and no global overflow; preserve professional query navigation.
-- [ ] Independent review, fix/re-review, lint/typecheck/build and local track commit before Task 4 implementation.
+- [x] RED unit and real-browser geometry for 11:30–11:50 then 12:00–13:30: one lane each, first painted bottom before noon, no fake duration extension. Genuine 11:30–12:15 / 12:00–13:30 stays two lanes. Include short blocks interleaved with bookings, 5-minute events, end-of-day and Santiago timezone fixtures.
+- [x] Replace the old test demanding 44px *painted* boxes for five-minute events with true geometry plus reachable measured 44px equivalent actions. This is a changed product contract, not permission to drop access coverage. Verify original timestamps reach the right drawer, keyboard opening and restored focus for both a long event and the brief-event list.
+- [x] Cover confirmed/pending-payment/pending-approval/expired/cancelled/completed/no-show rows and mobile cards: primary + one menu at most, each action retained in its valid state, no active-looking confirmations/reminders on terminal or stale records. Open the actual Radix menu in tests instead of asserting source strings only.
+- [x] Real browser clipboard success and failure survive menu closure; no outgoing WhatsApp sends or real payment/lifecycle mutations for QA. Compare tablet/desktop calendar geometry and narrow mobile list, long labels and no global overflow; preserve professional query navigation.
+- [x] Independent review, fix/re-review, lint/typecheck/build and local track commit before Task 4 implementation.
+
+Verification: initial review plus two scoped fix/re-review rounds closed all findings. The calendar boundary run passed 17 unit files / 198 tests; the final contact-instance change passed 3 affected files / 50 tests independently. Final full lint/typecheck and CI-style build passed (61 pages). The final compiled-artifact browser run passed 20/20 in 28.5s with zero retries, including 320/390/834/1440 layouts, real overlap/continuations and Santiago DST, accessible brief events, status actions, clipboard failure/retry, and local synthetic-block reason saves preserving UTC endpoints and tolerance. No booking/payment lifecycle action or outbound message was submitted. Production publication remains Task 8.
 
 ### Task 4: Contact identity
 

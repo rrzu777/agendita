@@ -10,8 +10,7 @@ import {
   skipSeriesOccurrence, overrideSeriesOccurrence, updateTimeBlockSeries, deleteTimeBlockSeries,
 } from '@/server/actions/time-blocks'
 import type { ActionResult } from '@/lib/actions/result'
-import { deriveBlockFormValues } from '@/lib/calendar/block-form-values'
-import { localDateTimeToUtc } from '@/lib/availability/timezone'
+import { deriveBlockFormValues, resolveBlockFormInterval } from '@/lib/calendar/block-form-values'
 import { BlockFormFields } from './block-form-fields'
 import type { CalendarTimeBlock } from './time-block-card'
 
@@ -20,13 +19,15 @@ interface Props {
   timezone: string
   open: boolean
   onOpenChange: (open: boolean) => void
+  onCloseAutoFocus?: (event: Event) => void
 }
 
 type Scope = 'occurrence' | 'series'
 
-export function EditSeriesOccurrenceDialog({ block, timezone, open, onOpenChange }: Props) {
+export function EditSeriesOccurrenceDialog({ block, timezone, open, onOpenChange, onCloseAutoFocus }: Props) {
   const initial = deriveBlockFormValues(block, timezone)
   const [date, setDate] = useState(initial.date)
+  const [endDate, setEndDate] = useState(initial.endDate)
   const [startTime, setStartTime] = useState(initial.startTime)
   const [endTime, setEndTime] = useState(initial.endTime)
   const [reason, setReason] = useState(initial.reason)
@@ -75,11 +76,12 @@ export function EditSeriesOccurrenceDialog({ block, timezone, open, onOpenChange
   }
 
   function saveScope(scope: Scope, confirmed = false) {
+    const interval = resolveBlockFormInterval(block, { date, endDate, startTime, endTime }, timezone)
     const call =
       scope === 'occurrence'
         ? () => overrideSeriesOccurrence(seriesId, occurrenceDate, {
-            startDateTime: localDateTimeToUtc(date, startTime, timezone),
-            endDateTime: localDateTimeToUtc(date, endTime, timezone),
+            startDateTime: interval.start,
+            endDateTime: interval.end,
             reason: reason || null,
             confirmed,
           })
@@ -100,7 +102,7 @@ export function EditSeriesOccurrenceDialog({ block, timezone, open, onOpenChange
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent>
+      <DialogContent onCloseAutoFocus={onCloseAutoFocus}>
         {overlapPrompt ? (
           <>
             <DialogHeader>
@@ -148,6 +150,7 @@ export function EditSeriesOccurrenceDialog({ block, timezone, open, onOpenChange
             <div className="space-y-4">
               <BlockFormFields
                 date={date} onDateChange={setDate}
+                endDate={endDate} onEndDateChange={setEndDate}
                 startTime={startTime} onStartTimeChange={setStartTime}
                 endTime={endTime} onEndTimeChange={setEndTime}
                 reason={reason} onReasonChange={setReason}
