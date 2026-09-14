@@ -6,6 +6,7 @@ type SettingsSaveBarProps = {
   isSubmitting: boolean
   status: 'idle' | 'saved' | 'error'
   error?: string | null
+  disabled?: boolean
 }
 
 function getStatusMessage({ isDirty, isSubmitting, status, error }: SettingsSaveBarProps) {
@@ -17,7 +18,7 @@ function getStatusMessage({ isDirty, isSubmitting, status, error }: SettingsSave
 }
 
 export function SettingsSaveBar(props: SettingsSaveBarProps) {
-  const { isDirty, isSubmitting } = props
+  const { isDirty, isSubmitting, disabled = false } = props
   const shouldDock = isDirty || isSubmitting || props.status !== 'idle'
 
   return (
@@ -33,7 +34,7 @@ export function SettingsSaveBar(props: SettingsSaveBarProps) {
         <p aria-live="polite" className="text-sm text-muted-foreground">
           {getStatusMessage(props)}
         </p>
-        <Button type="submit" size="form" disabled={!isDirty || isSubmitting}>
+        <Button type="submit" size="form" disabled={disabled || !isDirty || isSubmitting}>
           {isSubmitting ? 'Guardando…' : 'Guardar cambios'}
         </Button>
       </div>

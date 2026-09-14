@@ -106,6 +106,17 @@ describe('ProfileSettingsForm', () => {
     })
   }
 
+  it('renders profile controls disabled until hydration owns the SSR form', () => {
+    const html = renderToStaticMarkup(
+      <UnsavedChangesProvider>
+        <ProfileSettingsForm businessId="biz-ssr" slug="mi-negocio" category="other" initialValues={profileValues} />
+      </UnsavedChangesProvider>,
+    )
+
+    expect(html).toMatch(/<fieldset[^>]*disabled[^>]*aria-label="Campos del perfil"/)
+    expect(html).toMatch(/<button[^>]*type="submit"[^>]*disabled/)
+  })
+
   it('uses the shared form field and dashboard density for every profile control', async () => {
     await renderProfile()
 

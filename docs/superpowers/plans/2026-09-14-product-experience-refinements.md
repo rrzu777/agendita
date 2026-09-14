@@ -23,8 +23,8 @@
 
 | Task | Scope | State |
 |---|---|---|
-| 1 | Non-blocking onboarding tabs | Verified; review and re-review clean, local commit ready |
-| 2 | Public service proportions + shared picker/favorites | Pending |
+| 1 | Non-blocking onboarding tabs | Complete locally: 6aaf438; review and re-review clean |
+| 2 | Public service proportions + shared picker/favorites | Complete locally; independent review clean, 34 compiled-browser cases passed; not deployed |
 | 3 | Booking action menu + truthful calendar geometry | Pending |
 | 4 | Contact deduplication and reviewed merge | Pending |
 | 5 | Compact chart-led metrics | Pending |
@@ -89,9 +89,20 @@ Verification: independent review and scoped re-review closed all findings. Root 
 
 ### Task 3: Reservation action density and calendar
 
-Files: `booking-row-actions.tsx`, `booking-contact-buttons.tsx`, booking list/card consumers, `calendar-views.tsx`, `src/lib/calendar/timeline.ts`, existing calendar and booking action tests. Derive lane clusters from real intervals; presentation must not claim a 20-minute service runs into the next appointment. Retain 44px accessible equivalent actions, mobile agenda, drawer focus and genuine concurrency lanes.
+**Files:** `src/components/dashboard/{booking-row-actions,booking-contact-buttons,booking-drawer,calendar-views}.tsx`, `src/app/dashboard/bookings/page.tsx`, `src/lib/calendar/timeline.ts`, narrowly scoped shared helpers/components for contact feedback or brief-event access, existing calendar/booking unit tests and a dedicated browser regression. No booking/payment server mutation changes.
 
-Core regression: 11:30–11:50 then 12:00–13:30 have no temporal overlap or displayed duration extension; 11:30–12:15 and 12:00–13:30 do overlap. Test actual bounding boxes and access, not only a constant. Every booking status has at most primary+overflow; expired records never display confirmation/reminder as if active. Preserve recovery/payment guards.
+**Calendar decision:** lane packing and painted height use real intervals only. Keep the existing hour scale; remove the artificial minimum-duration argument instead of stretching the axis or hiding real overlaps. Long events remain direct controls when their true box satisfies 44px; a shorter event is a non-interactive, labelled visual band at its true duration, not an enlarged invisible hit target. Provide a clearly named, 44px disclosure immediately above the timeline (`Citas breves y bloqueos`, with count) containing 44px detail buttons grouped by day. These are the equivalent actions for every short booking/block, with customer/service or block reason, professional, status and exact start–end. Do not depend on hover. Keep that list mounted while a drawer is open so focus restores correctly. Omit the disclosure when empty. Existing phone week agenda remains the primary list there; no duplicate short-event panel in that branch. Full end times should also appear in the ordinary agenda and longer event accessible names.
+
+**Contact/action decision:** use the same `BookingRowActions` controller in desktop rows and mobile booking cards. Each status has at most one primary action plus overflow; preserve all existing lifecycle/payment/revive actions and their guards. Expired primary is the existing Revivir action, terminal rows may have only overflow, and completed-with-balance retains Cobrar without Cancelar/Reprogramar. Remove the `contactInline` escape hatch. Pass structured contact data to the persistent row controller rather than mounting independent contact state inside an ephemeral menu. Clipboard result belongs to an inline `role=status/alert` outside the menu and must remain visible after it closes; failed copy offers a usable retry and never says Copiado. No global toast framework is needed.
+
+**State truth:** confirmation is available only for an effectively confirmed booking; appointment reminders only while effectively confirmed and still upcoming, using the same server `now` as the row/drawer. Cancelled/expired/completed/no-show and pending requests must not produce a confirmation or reminder that claims the appointment is confirmed. Retain a neutral WhatsApp contact link and internal copy-summary access where contact exists. Apply the same policy to row/card/drawer and include both copy and send variants. Compute effective state from the existing status/hold/approval helpers, not a new client clock. Task 7 later customizes text, without weakening these guards.
+
+**Proof steps:**
+- [ ] RED unit and real-browser geometry for 11:30–11:50 then 12:00–13:30: one lane each, first painted bottom before noon, no fake duration extension. Genuine 11:30–12:15 / 12:00–13:30 stays two lanes. Include short blocks interleaved with bookings, 5-minute events, end-of-day and Santiago timezone fixtures.
+- [ ] Replace the old test demanding 44px *painted* boxes for five-minute events with true geometry plus reachable measured 44px equivalent actions. This is a changed product contract, not permission to drop access coverage. Verify original timestamps reach the right drawer, keyboard opening and restored focus for both a long event and the brief-event list.
+- [ ] Cover confirmed/pending-payment/pending-approval/expired/cancelled/completed/no-show rows and mobile cards: primary + one menu at most, each action retained in its valid state, no active-looking confirmations/reminders on terminal or stale records. Open the actual Radix menu in tests instead of asserting source strings only.
+- [ ] Real browser clipboard success and failure survive menu closure; no outgoing WhatsApp sends or real payment/lifecycle mutations for QA. Compare tablet/desktop calendar geometry and narrow mobile list, long labels and no global overflow; preserve professional query navigation.
+- [ ] Independent review, fix/re-review, lint/typecheck/build and local track commit before Task 4 implementation.
 
 ### Task 4: Contact identity
 
